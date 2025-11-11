@@ -1,0 +1,54 @@
+type VideoId = text;
+type Timestamp = int64;
+type Url = text;
+
+type FetchStatus = variant {
+  Ok;
+  NotFound;
+  Error : text;
+  Pending;
+};
+
+type Video = record {
+  id: VideoId;
+  title: text;
+  description: text;
+  channel: text;
+  odysee_url: Url;
+  thumbnail_url: opt Url;
+  published_at: Timestamp;
+  fetched_at: Timestamp;
+  content_hash: opt text;
+  fetch_status: FetchStatus;
+  license: opt text;
+};
+
+type PollConfig = record {
+  interval_seconds: nat64;
+  enabled: bool;
+};
+
+type Result = variant {
+  Ok;
+  Err : text;
+};
+
+service : {
+  // Video queries
+  "list_videos": () -> (vec Video) query;
+  "get_video": (VideoId) -> (opt Video) query;
+  "get_videos_by_channel": (text) -> (vec Video) query;
+  
+  // Video management
+  "add_or_update_video": (Video) -> (Result);
+  "remove_video": (VideoId) -> (Result);
+  
+  // Polling and admin
+  "manual_poll": () -> (Result);
+  "set_poll_config": (PollConfig) -> (Result);
+  "get_poll_config": () -> (PollConfig) query;
+  
+  // Utility
+  "whoami": () -> (principal) query;
+  "get_stats": () -> (record { total_videos: nat64; last_poll: opt Timestamp }) query;
+}

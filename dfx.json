@@ -1,0 +1,27 @@
+{
+  "canisters": {
+    "lain-tv-backend": {
+      "candid": "src/lain-tv-backend/lain-tv-backend.did",
+      "package": "lain-tv-backend",
+      "type": "rust"
+    },
+    "lain-tv-frontend": {
+      "dependencies": [
+        "lain-tv-backend"
+      ],
+      "source": [
+        "src/lain-tv-frontend/dist"
+      ],
+      "type": "assets",
+      "workspace": "lain-tv-frontend"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}

@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "src/lain-tv-backend"
+]
+resolver = "2"
