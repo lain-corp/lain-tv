@@ -62,7 +62,10 @@ services:
       - MAX_TOKENS=150
 
   websocket:
-    image: node:18-alpine
+    image: ghcr.io/lain-corp/lain-tv/websocket:latest
+    build:
+      context: https://github.com/lain-corp/lain-tv.git
+      dockerfile: backend/websocket/Dockerfile
     expose:
       - port: 8080
         as: 80
@@ -80,7 +83,10 @@ services:
       - REDIS_PORT=6379
 
   tts:
-    image: python:3.11-slim
+    image: ghcr.io/lain-corp/lain-tv/tts:latest
+    build:
+      context: https://github.com/lain-corp/lain-tv.git
+      dockerfile: backend/tts/Dockerfile
     expose:
       - port: 8002
         as: 8002
@@ -91,7 +97,10 @@ services:
       - REDIS_PORT=6379
 
   animation:
-    image: python:3.11-slim
+    image: ghcr.io/lain-corp/lain-tv/animation:latest
+    build:
+      context: https://github.com/lain-corp/lain-tv.git
+      dockerfile: backend/animation/Dockerfile
     expose:
       - port: 8003
         as: 8003

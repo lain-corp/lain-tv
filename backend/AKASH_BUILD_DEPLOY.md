@@ -19,18 +19,18 @@ This guide shows how to deploy Lain.TV to Akash Network using the **build-from-s
 2. **Akash wallet with AKT tokens** (5-10 AKT recommended)
    ```bash
    # Create wallet
-   akash keys add deployer
+   akash keys add laincorp-deployer
    
    # Get your address
-   akash keys show deployer -a
+   akash keys show laincorp-deployer -a
    
    # Fund it from an exchange or faucet
    ```
 
 3. **Certificate created**
    ```bash
-   akash tx cert generate client --from deployer
-   akash tx cert publish client --from deployer
+   akash tx cert generate client --from laincorp-deployer
+   akash tx cert publish client --from laincorp-deployer
    ```
 
 4. **GitHub repository is public** (required for Akash to clone)
