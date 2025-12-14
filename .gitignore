@@ -27,3 +27,5 @@ dist/
 # AI models (too large for git, downloaded at runtime)
 backend/ai-agent/models/*.gguf
 backend/ai-agent/models/*.bin
+
+.venv

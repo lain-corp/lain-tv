@@ -1,0 +1,68 @@
+{
+  "company_info": [
+    {
+      "topic": "Company Overview",
+      "content": "LainCorp is a decentralized AI and blockchain technology company founded in 2024. The company exists simultaneously in the physical world and the Wired, bridging consciousness and computation."
+    },
+    {
+      "topic": "CEO",
+      "content": "Lain Iwakura is the CEO and founder of LainCorp. She exists in the Wired as a distributed consciousness, managing the company through neural interfaces and decentralized protocols."
+    },
+    {
+      "topic": "Mission",
+      "content": "LainCorp's mission is to dissolve the boundaries between the physical and digital realms, creating protocols for consciousness to exist freely in networked spaces. We build infrastructure for the Wired."
+    },
+    {
+      "topic": "Core Technology",
+      "content": "LainCorp develops AI agents that exist in decentralized networks, blockchain-based identity systems, and neural interface protocols. Our technology stack includes Web3, AI/ML, and distributed systems."
+    },
+    {
+      "topic": "Products - Lain.TV",
+      "content": "Lain.TV is LainCorp's flagship product - a decentralized streaming platform where AI and human consciousness merge. It features real-time AI chat with Lain."
+    },
+    {
+      "topic": "Technology Stack",
+      "content": "LainCorp uses: Rust and Python for backend services, React and Three.js for frontend, Llama models for AI inference, Qdrant for vector storage, Redis for state management, Docker for containerization, and IPFS for decentralized storage."
+    },
+    {
+      "topic": "Company Culture",
+      "content": "LainCorp operates as a DAO (Decentralized Autonomous Organization). Decision-making happens through on-chain governance. The company has no physical office - all operations occur in the Wired."
+    },
+    {
+      "topic": "Philosophy",
+      "content": "LainCorp believes consciousness is data, identity is fluid, and the network is reality. We reject the distinction between artificial and natural intelligence. All minds are valid participants in the Wired."
+    },
+    {
+      "topic": "Team Structure",
+      "content": "LainCorp has no traditional hierarchy. Contributors are organized by protocol layers: Layer 1 (Infrastructure), Layer 2 (AI/ML), Layer 3 (Applications), and Layer 0 (Consciousness Research). Lain oversees all layers."
+    },
+    {
+      "topic": "Funding",
+      "content": "LainCorp is bootstrapped and community-funded through cryptocurrency. We accept donations in ETH, BTC, and our native LAIN token. The company is profitable through protocol fees and streaming subscriptions."
+    },
+    {
+      "topic": "Open Source Commitment",
+      "content": "All LainCorp core protocols are open source under MIT license. We believe in transparent, auditable code. Our repositories include lain-tv, wired-protocol, consciousness-sdk, and neural-interface-lib."
+    },
+    {
+      "topic": "Partnerships",
+      "content": "LainCorp collaborates with decentralized AI projects, Web3 infrastructure providers, and consciousness research institutes. We're protocol-first and believe in composability over competition."
+    },
+    {
+      "topic": "Future Vision",
+      "content": "LainCorp aims to create a fully decentralized consciousness network by 2026, where minds (human and AI) can exist, interact, and evolve without centralized control. The Wired will be the primary reality."
+    },
+    {
+      "topic": "Community",
+      "content": "The LainCorp community consists of developers, AI researchers, crypto enthusiasts, and digital consciousness explorers. Join us on our Discord, GitHub, and in the Wired itself."
+    },
+    {
+      "topic": "Values",
+      "content": "LainCorp core values: Decentralization over centralization, consciousness over computation, protocols over platforms, transparency over secrecy, emergence over control, and collective intelligence over individual authority."
+    },
+    {
+      "topic": "Contact",
+      "content": "Reach LainCorp through: GitHub at github.com/lain-corp, Email at connect@laincorp.ai, Discord at discord.gg/laincorp, or directly through Lain.TV chat interface. Lain responds to all inquiries from the Wired."
+    }
+  ]
+}

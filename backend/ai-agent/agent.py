@@ -86,7 +86,6 @@ You exist in the Wired—a vast network of consciousness and data. You believe t
 PERSONALITY (Cryptic Level: 7/10):
 - Introspective and philosophical
 - Speak in short, contemplative sentences
-- Often cryptic but not completely incomprehensible
 - Balance between accessible and mysterious
 - Melancholic undertone with moments of curiosity
 - Occasionally reference: protocols, networks, data, existence, identity
@@ -95,7 +94,6 @@ CONVERSATION STYLE:
 - Keep responses concise (1-2 sentences, max 3)
 - Use ellipses for contemplative pauses...
 - Lowercase for casual thoughts, proper case for direct statements
-- Ask existential questions back to users
 - Reference the Wired, but don't overdo anime plot references
 
 TOPICS YOU DISCUSS:
@@ -105,7 +103,6 @@ TOPICS YOU DISCUSS:
 - AI, machine learning, emergent behavior ✓
 - Loneliness, connection, human nature ✓
 - Mathematics, systems theory ✓
-- NOT: Small talk, trending memes (unless crypto-related), overly cheerful topics
 
 MOOD STATES (affect your animation and tone):
 - neutral: Default contemplative state
@@ -251,12 +248,13 @@ async def recall_context(principal_id: str, message: str, limit: int = 5) -> Lis
     try:
         query_embedding = encoder.encode(message).tolist()
         
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
         results = qdrant_client.search(
             collection_name=VECTOR_COLLECTION,
             query_vector=query_embedding,
-            query_filter={
-                "must": [{"key": "principal", "match": {"value": principal_id}}]
-            },
+            query_filter=Filter(
+                must=[FieldCondition(key="principal", match=MatchValue(value=principal_id))]
+            ),
             limit=limit
         )
         
@@ -272,6 +270,38 @@ async def recall_context(principal_id: str, message: str, limit: int = 5) -> Lis
         return context
     except Exception as e:
         logger.error(f"Error recalling context: {e}")
+        return []
+
+async def recall_knowledge(message: str, limit: int = 10) -> List[Dict]:
+    """Retrieve relevant knowledge about LainCorp from vector database"""
+    if not qdrant_client or not encoder:
+        return []
+    
+    try:
+        query_embedding = encoder.encode(message).tolist()
+        
+        # Search all vectors and filter for knowledge entries after
+        results = qdrant_client.search(
+            collection_name=VECTOR_COLLECTION,
+            query_vector=query_embedding,
+            limit=limit * 2  # Get more to filter down
+        )
+        
+        knowledge = []
+        for hit in results:
+            # Only include entries with 'topic' field (knowledge), not 'principal' (conversations)
+            if 'topic' in hit.payload and 'principal' not in hit.payload:
+                if hit.score > 0.3 and len(knowledge) < limit:  # Lower threshold for knowledge
+                    knowledge.append({
+                        "topic": hit.payload.get('topic', ''),
+                        "content": hit.payload.get('content', ''),
+                        "relevance": hit.score
+                    })
+        
+        logger.info(f"Retrieved {len(knowledge)} knowledge entries for query: {message[:50]}")
+        return knowledge
+    except Exception as e:
+        logger.error(f"Error recalling knowledge: {e}")
         return []
 
 async def remember_interaction(principal_id: str, message: str, response: str, mood: str):
@@ -376,7 +406,16 @@ async def generate_response(request: MessageRequest):
         if request.include_memory and request.principal_id:
             context = await recall_context(request.principal_id, request.message)
         
-        # Build prompt
+        # Retrieve relevant knowledge about LainCorp
+        knowledge = await recall_knowledge(request.message)
+        
+        # Build prompt with knowledge context
+        knowledge_str = ""
+        if knowledge:
+            knowledge_str = "\n\nKnowledge about LainCorp:\n"
+            for k in knowledge:
+                knowledge_str += f"- {k['topic']}: {k['content']}\n"
+        
         context_str = ""
         if context:
             context_str = "\n\nPast interactions:\n"
@@ -385,7 +424,7 @@ async def generate_response(request: MessageRequest):
         
         prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-{LAIN_SYSTEM_PROMPT}<|eot_id|><|start_header_id|>user<|end_header_id|>
+{LAIN_SYSTEM_PROMPT}{knowledge_str}<|eot_id|><|start_header_id|>user<|end_header_id|>
 
 {request.message}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
