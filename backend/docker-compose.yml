@@ -1,240 +1,106 @@
 version: '3.8'
 
 services:
-  # Redis - Cache and message queue
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - websocket
+      - lainllm
+      - tts
+      - animation
+    networks:
+      - lain-network
+
   redis:
     image: redis:7-alpine
-    container_name: lain-redis
-    ports:
-      - "6379:6379"
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    networks:
+      - lain-network
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    restart: unless-stopped
-    networks:
-      - lain-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
 
-  # Qdrant - Vector database for user memory and context
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: lain-qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant-data:/qdrant/storage
-    restart: unless-stopped
-    networks:
-      - lain-network
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__SERVICE__MAX_REQUEST_SIZE_MB=32
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
+    networks:
+      - lain-network
+    volumes:
+      - qdrant-data:/qdrant/storage
 
-  # AI Agent - CPU-optimized LLM with llama.cpp
-  ai-agent:
+  lainllm:
     build:
       context: ./ai-agent
       dockerfile: Dockerfile
-    container_name: lain-ai-agent
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./ai-agent:/app
-      - ai-models:/models
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - MODEL_PATH=/models/lain-model.gguf
-      - MODEL_TYPE=llama.cpp
       - N_THREADS=8
       - N_CTX=4096
       - N_BATCH=512
-      - LAIN_PERSONALITY_MODE=cryptic
       - TEMPERATURE=0.8
       - MAX_TOKENS=150
-      - VECTOR_COLLECTION=lain_memory
-      - TOP_P=0.9
-      - REPEAT_PENALTY=1.1
     depends_on:
-      redis:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-    restart: unless-stopped
+      - redis
+      - qdrant
     networks:
       - lain-network
-    deploy:
-      resources:
-        limits:
-          cpus: '8'
-          memory: 8G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # TTS Engine - CPU-optimized Piper TTS
-  tts-engine:
-    build:
-      context: ./tts-engine
-      dockerfile: Dockerfile
-    container_name: lain-tts
-    ports:
-      - "8002:8002"
     volumes:
-      - ./tts-engine:/app
-      - tts-models:/models
-      - tts-output:/output
+      - model-cache:/models
+
+  websocket:
+    build:
+      context: ./websocket
+      dockerfile: Dockerfile
+    environment:
+      - LAINLLM_URL=http://lainllm:8001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - lainllm
+      - redis
+    networks:
+      - lain-network
+
+  tts:
+    build:
+      context: ./tts
+      dockerfile: Dockerfile
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - TTS_ENGINE=piper
-      - PIPER_MODEL=en_US-lessac-medium
-      - VOICE_MODEL_PATH=/models/lain_voice.onnx
-      - OUTPUT_PATH=/output
-      - SPEAKER_ID=0
-      - LENGTH_SCALE=1.0
-      - NOISE_SCALE=0.667
     depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
+      - redis
     networks:
       - lain-network
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # Animation Controller - State machine for Lain animations
-  animation-controller:
+  animation:
     build:
-      context: ./animation-controller
+      context: ./animation
       dockerfile: Dockerfile
-    container_name: lain-animation
-    ports:
-      - "8003:8003"
-    volumes:
-      - ./animation-controller:/app
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - IDLE_INTERVAL=30
-      - MOOD_STATES=idle,curious,thoughtful,cryptic,surprised,distant,melancholic
-      - DEFAULT_ANIMATION=idle
-      - ANIMATION_BLEND_TIME=0.5
     depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
+      - redis
     networks:
       - lain-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # WebSocket Server - Real-time bidirectional communication
-  websocket-server:
-    build:
-      context: ./websocket-server
-      dockerfile: Dockerfile
-    container_name: lain-websocket
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./websocket-server:/app
-      - ./websocket-server/node_modules:/app/node_modules
-    environment:
-      - NODE_ENV=production
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - AI_AGENT_URL=http://ai-agent:8001
-      - TTS_URL=http://tts-engine:8002
-      - ANIMATION_URL=http://animation-controller:8003
-      - RATE_LIMIT_MESSAGES=10
-      - RATE_LIMIT_WINDOW=60
-      - MAX_MESSAGE_LENGTH=500
-      - ENABLE_ICP_VERIFICATION=true
-      - WS_PORT=8080
-      - MAX_CONNECTIONS=1000
-      - PING_INTERVAL=30000
-      - PING_TIMEOUT=5000
-    depends_on:
-      redis:
-        condition: service_healthy
-      ai-agent:
-        condition: service_healthy
-      tts-engine:
-        condition: service_healthy
-      animation-controller:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - lain-network
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 1G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # NGINX - Reverse proxy with SSL
-  nginx:
-    image: nginx:alpine
-    container_name: lain-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - nginx-logs:/var/log/nginx
-    depends_on:
-      - websocket-server
-    restart: unless-stopped
-    networks:
-      - lain-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 networks:
   lain-network:
@@ -243,7 +109,4 @@ networks:
 volumes:
   redis-data:
   qdrant-data:
-  ai-models:
-  tts-models:
-  tts-output:
-  nginx-logs:
+  model-cache:
