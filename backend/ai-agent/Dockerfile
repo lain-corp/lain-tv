@@ -1,7 +1,10 @@
 FROM python:3.11-slim
 
-# Install minimal runtime dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
     curl \
     wget \
     libgomp1 \
@@ -14,8 +17,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install pre-built llama-cpp-python wheel (much smaller than building from source)
-RUN pip install --no-cache-dir llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# Install llama-cpp-python (will build from source)
+RUN pip install --no-cache-dir llama-cpp-python
 
 # Copy application code
 COPY agent.py .
