@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { lain_tv_backend } from 'declarations/lain-tv-backend';
+import { useState, useEffect, useRef } from 'react';
+// import { lain_tv_backend } from 'declarations/lain-tv-backend';  // Not needed for AI chat mode
+import VRMViewer from './VRMViewer';
 
 // Odysee Official Categories
 const CATEGORIES = ['discover', 'artists', 'tech', 'gaming', 'music', 'sports', 'news', 'movies', 'education', 'comedy', 'lifestyle'];
@@ -34,6 +35,175 @@ function TVCorner({ className }) {
           console.warn('LAIN.gif not found');
         }}
       />
+    </div>
+  );
+}
+
+// AI Chat Panel Component (replaces Control Panel)
+function AIChatPanel() {
+  const [messages, setMessages] = useState([]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const wsRef = useRef(null);
+  const messagesEndRef = useRef(null);
+
+  // WebSocket connection
+  useEffect(() => {
+    const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('Connected to Lain');
+      setIsConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'history') {
+          setMessages(data.messages || []);
+        } else if (data.type === 'message') {
+          setMessages(prev => [...prev, {
+            user: data.user || 'Lain',
+            message: data.message,
+            timestamp: new Date().toISOString()
+          }]);
+        }
+      } catch (error) {
+        console.error('Error parsing message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setIsConnected(false);
+    };
+
+    ws.onclose = () => {
+      console.log('Disconnected from Lain');
+      setIsConnected(false);
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, []);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const sendMessage = () => {
+    if (!inputMessage.trim() || !wsRef.current) return;
+
+    const message = {
+      type: 'chat',
+      message: inputMessage,
+      user_id: 'web_user',
+      username: 'Anonymous'
+    };
+
+    wsRef.current.send(JSON.stringify(message));
+    
+    // Add user message to local state
+    setMessages(prev => [...prev, {
+      user: 'You',
+      message: inputMessage,
+      timestamp: new Date().toISOString()
+    }]);
+    
+    setInputMessage('');
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  return (
+    <div className="control-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ 
+        color: isConnected ? '#00ff00' : '#ff0000', 
+        fontWeight: 'bold', 
+        padding: '10px',
+        textAlign: 'center',
+        borderBottom: '1px solid #00ff00'
+      }}>
+        {isConnected ? '● CONNECTED TO LAIN' : '○ DISCONNECTED'}
+      </div>
+      
+      <div style={{ 
+        flex: 1, 
+        overflowY: 'auto', 
+        padding: '10px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
+      }}>
+        {messages.map((msg, index) => (
+          <div key={index} style={{
+            padding: '8px',
+            backgroundColor: msg.user === 'You' ? 'rgba(0, 255, 0, 0.1)' : 'rgba(255, 0, 255, 0.1)',
+            border: `1px solid ${msg.user === 'You' ? '#00ff00' : '#ff00ff'}`,
+            borderRadius: '4px'
+          }}>
+            <div style={{ 
+              color: msg.user === 'You' ? '#00ff00' : '#ff00ff',
+              fontSize: '0.8em',
+              marginBottom: '4px'
+            }}>
+              {msg.user}
+            </div>
+            <div style={{ color: '#ffffff' }}>{msg.message}</div>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+      
+      <div style={{ padding: '10px', borderTop: '1px solid #00ff00' }}>
+        <textarea
+          value={inputMessage}
+          onChange={(e) => setInputMessage(e.target.value)}
+          onKeyPress={handleKeyPress}
+          placeholder="Talk to Lain..."
+          style={{
+            width: '100%',
+            minHeight: '60px',
+            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+            border: '1px solid #00ff00',
+            color: '#00ff00',
+            padding: '8px',
+            fontFamily: 'monospace',
+            fontSize: '14px',
+            resize: 'none',
+            marginBottom: '8px'
+          }}
+          disabled={!isConnected}
+        />
+        <button 
+          onClick={sendMessage}
+          disabled={!isConnected || !inputMessage.trim()}
+          style={{
+            width: '100%',
+            padding: '8px',
+            backgroundColor: isConnected ? '#00ff00' : '#666',
+            color: '#000',
+            border: 'none',
+            fontWeight: 'bold',
+            cursor: isConnected ? 'pointer' : 'not-allowed',
+            fontFamily: 'monospace'
+          }}
+        >
+          SEND TO LAIN
+        </button>
+      </div>
     </div>
   );
 }
@@ -105,48 +275,23 @@ function VideoList({ videos, currentVideoIndex, onVideoSelect }) {
   );
 }
 
-// Main Screen Component
-function MainScreen({ currentVideo, isLoading }) {
-  const getOdyseeEmbedUrl = (odyseeUrl) => {
-    if (!odyseeUrl || !odyseeUrl.includes('odysee.com/')) {
-      return odyseeUrl;
-    }
-    
-    // Handle different Odysee URL formats
-    // From: https://odysee.com/@channel:id/video:id
-    // To: https://odysee.com/$/embed/@channel:id/video:id
-    const urlParts = odyseeUrl.split('odysee.com/');
-    if (urlParts.length === 2) {
-      const path = urlParts[1];
-      return `https://odysee.com/$/embed/${path}`;
-    }
-    
-    return odyseeUrl;
-  };
-
+// Main Screen Component - Now shows VRM Lain instead of videos
+function MainScreen({ animationData, isLoading }) {
   return (
     <div className="main-screen">
       <div className="screen-content">
-        <div className="video-container">
+        <div className="video-container" style={{ position: 'relative' }}>
           {isLoading ? (
             <div className="video-placeholder loading">
               LAIN TV<br />
-              <small>Loading from ICP...</small>
+              <small>Loading VRM model...</small>
             </div>
-          ) : currentVideo ? (
-            <iframe
-              src={getOdyseeEmbedUrl(currentVideo.odysee_url)}
-              width="100%"
-              height="100%"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
           ) : (
-            <div className="video-placeholder">
-              LAIN TV<br />
-              <small>Select a channel</small>
-            </div>
+            <VRMViewer 
+              animationData={animationData}
+              modelPath="/models/lain.vrm"
+              className="vrm-container"
+            />
           )}
         </div>
         <div className="screen-overlay"></div>
@@ -168,93 +313,55 @@ function Notification({ message, show }) {
 
 // Main App Component
 function App() {
-  const [videos, setVideos] = useState([]);
-  const [allVideos, setAllVideos] = useState([]);
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
-  const [currentChannel, setCurrentChannel] = useState(1);
-  const [selectedCategory, setSelectedCategory] = useState('general');
-  const [isLoading, setIsLoading] = useState(true);
+  const [animationData, setAnimationData] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentMood, setCurrentMood] = useState('neutral');
   const [notification, setNotification] = useState({ message: '', show: false });
 
-  // Mock data for development
-  const mockVideos = [
-    {
-      id: '0',
-      title: 'AI Art Works - Chill Lofi Stream',
-      description: 'Relaxing AI-generated art and music 24/7',
-      channel: 'aiartworks360',
-      category: 'artists',
-      featured: true,
-      odysee_url: 'https://odysee.com/@aiartworks360:2/chill:bf',
-      thumbnail_url: null,
-      published_at: Date.now(),
-    },
-    {
-      id: '1',
-      title: 'Get ready for Lain I/O',
-      description: 'Exploring blockchain technology and the Internet Computer',
-      channel: 'laincorp',
-      category: 'tech',
-      featured: true,
-      odysee_url: 'https://odysee.com/Lain-I-O:0ebb072b602d44c0268f47c90414169ce7417420',
-      thumbnail_url: null,
-      published_at: Date.now() - 86400000,
-    }
-  ];
-
-  useEffect(() => {
-    loadVideos();
-  }, []);
-
-  // Filter videos when category changes
-  useEffect(() => {
-    if (allVideos.length > 0) {
-      filterVideosByCategory(selectedCategory);
-    }
-  }, [selectedCategory, allVideos]);
-
-  const loadVideos = async () => {
-    setIsLoading(true);
+  const fetchAnimationState = async () => {
     try {
-      // Fetch only featured videos for the channel guide
-      const backendVideos = await lain_tv_backend.get_featured_videos();
-      if (backendVideos && backendVideos.length > 0) {
-        // Convert BigInt to Number for timestamps if needed
-        const processedVideos = backendVideos.map(v => ({
-          ...v,
-          published_at: Number(v.published_at),
-          fetched_at: Number(v.fetched_at),
-        }));
-        setAllVideos(processedVideos);
-        filterVideosByCategory(selectedCategory, processedVideos);
-      } else {
-        // Fall back to mock data
-        setAllVideos(mockVideos);
-        setVideos(mockVideos);
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+      const response = await fetch(`${apiUrl}/api/animation/get_animation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mood: currentMood,
+          state: 'idle'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setAnimationData(data);
       }
     } catch (error) {
-      console.error('Error loading videos, using mock data:', error);
-      setAllVideos(mockVideos);
-      setVideos(mockVideos);
+      console.error('Error fetching animation state:', error);
+      // Set default animation data on error
+      setAnimationData({
+        mood: 'neutral',
+        state: 'idle',
+        vrm_data: {
+          blend_shapes: {},
+          bone_rotations: {},
+          effects: { glitch: 0, bloom: 0.3, scanlines: 0.2, chromatic: 0 }
+        }
+      });
     }
-    setIsLoading(false);
   };
 
-  const filterVideosByCategory = (category, videoList = allVideos) => {
-    if (category === 'discover') {
-      setVideos(videoList);
-    } else {
-      const filtered = videoList.filter(v => v.category === category);
-      setVideos(filtered.length > 0 ? filtered : videoList);
-    }
-    setCurrentVideoIndex(0);
-    setCurrentChannel(1);
-  };
+  // Fetch initial animation state
+  useEffect(() => {
+    fetchAnimationState();
+  }, []);
 
-  const handleCategorySelect = (category) => {
-    setSelectedCategory(category);
-    showNotification(`📺 ${category.toUpperCase()}`);
-  };
+  // Update animation periodically for idle movement
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchAnimationState();
+    }, 5000); // Update every 5 seconds for natural idle animation
+
+    return () => clearInterval(interval);
+  }, [currentMood]);
 
   const showNotification = (message) => {
     setNotification({ message, show: true });
@@ -262,109 +369,6 @@ function App() {
       setNotification({ message: '', show: false });
     }, 2000);
   };
-
-  const handleChannelUp = () => {
-    const nextChannel = currentChannel < 10 ? currentChannel + 1 : 1;
-    setCurrentChannel(nextChannel);
-    const videoIndex = (nextChannel - 1) % videos.length;
-    setCurrentVideoIndex(videoIndex);
-  };
-
-  const handleChannelDown = () => {
-    const prevChannel = currentChannel > 1 ? currentChannel - 1 : 10;
-    setCurrentChannel(prevChannel);
-    const videoIndex = (prevChannel - 1) % videos.length;
-    setCurrentVideoIndex(videoIndex);
-  };
-
-  const handleVideoSelect = (index) => {
-    setCurrentVideoIndex(index);
-    setCurrentChannel(index + 1);
-  };
-
-  const handleNext = () => {
-    const nextIndex = (currentVideoIndex + 1) % videos.length;
-    setCurrentVideoIndex(nextIndex);
-    setCurrentChannel(nextIndex + 1);
-  };
-
-  const handlePrevious = () => {
-    const prevIndex = currentVideoIndex > 0 ? currentVideoIndex - 1 : videos.length - 1;
-    setCurrentVideoIndex(prevIndex);
-    setCurrentChannel(prevIndex + 1);
-  };
-
-  const handleSearch = async (query) => {
-    if (!query) return;
-    
-    showNotification(`🔍 Searching...`);
-    
-    try {
-      // Search across ALL videos (including non-featured) via backend
-      const searchResults = await lain_tv_backend.search_videos(query);
-      
-      if (searchResults && searchResults.length > 0) {
-        // Process and display search results
-        const processedResults = searchResults.map(v => ({
-          ...v,
-          published_at: Number(v.published_at),
-          fetched_at: Number(v.fetched_at),
-        }));
-        
-        setVideos(processedResults);
-        setCurrentVideoIndex(0);
-        setCurrentChannel(1);
-        showNotification(`🔍 Found ${processedResults.length} results`);
-      } else {
-        // Fall back to local search in featured videos
-        const filtered = allVideos.filter(video => 
-          video.title.toLowerCase().includes(query.toLowerCase()) || 
-          video.channel.toLowerCase().includes(query.toLowerCase()) ||
-          video.description.toLowerCase().includes(query.toLowerCase())
-        );
-        
-        if (filtered.length > 0) {
-          setVideos(filtered);
-          setCurrentVideoIndex(0);
-          setCurrentChannel(1);
-          showNotification(`🔍 Found ${filtered.length} results`);
-        } else {
-          showNotification('❌ No results found');
-        }
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-      // Fall back to local search
-      const filtered = allVideos.filter(video => 
-        video.title.toLowerCase().includes(query.toLowerCase()) || 
-        video.channel.toLowerCase().includes(query.toLowerCase()) ||
-        video.description.toLowerCase().includes(query.toLowerCase())
-      );
-      
-      if (filtered.length > 0) {
-        setVideos(filtered);
-        setCurrentVideoIndex(0);
-        setCurrentChannel(1);
-        showNotification(`🔍 Found ${filtered.length} results`);
-      } else {
-        showNotification('❌ No results found');
-      }
-    }
-  };
-
-  const handleTogglePlay = () => {
-    showNotification('⏯ Playback control via Odysee player');
-  };
-
-  const handlePower = () => {
-    showNotification('📺 LAIN TV');
-  };
-
-  const handleMenu = () => {
-    showNotification('📋 MENU - Use search or channel buttons');
-  };
-
-  const currentVideo = videos.length > 0 ? videos[currentVideoIndex] : null;
 
   return (
     <div className="lain-tv-app">
@@ -374,34 +378,28 @@ function App() {
       <TVCorner className="tv-bottom-left" />
       <TVCorner className="tv-bottom-right" />
 
-      {/* Category selector */}
-      <CategorySelector 
-        selectedCategory={selectedCategory}
-        onCategorySelect={handleCategorySelect}
-      />
+      {/* Main screen - Now shows VRM Lain */}
+      <MainScreen animationData={animationData} isLoading={isLoading} />
 
-      {/* Main screen */}
-      <MainScreen currentVideo={currentVideo} isLoading={isLoading} />
+      {/* AI Chat Panel - replaces video list */}
+      <div className="video-list">
+        <div style={{ 
+          color: '#00ff00', 
+          fontWeight: 'bold', 
+          marginBottom: '15px', 
+          textAlign: 'center',
+          fontSize: '1.2em',
+          textShadow: '0 0 10px #00ff00'
+        }}>
+          💬 TALK TO LAIN
+        </div>
+        <div style={{ fontSize: '0.8em', color: '#00ff00', marginBottom: '10px', textAlign: 'center' }}>
+          Connect to the Wired...
+        </div>
+      </div>
 
-      {/* Video list sidebar */}
-      <VideoList 
-        videos={videos} 
-        currentVideoIndex={currentVideoIndex}
-        onVideoSelect={handleVideoSelect}
-      />
-
-      {/* Control panel */}
-      <ControlPanel
-        currentChannel={currentChannel}
-        onChannelUp={handleChannelUp}
-        onChannelDown={handleChannelDown}
-        onSearch={handleSearch}
-        onPrevious={handlePrevious}
-        onNext={handleNext}
-        onTogglePlay={handleTogglePlay}
-        onPower={handlePower}
-        onMenu={handleMenu}
-      />
+      {/* AI Chat Control Panel - replaces old control panel */}
+      <AIChatPanel />
 
       {/* Notification */}
       <Notification message={notification.message} show={notification.show} />

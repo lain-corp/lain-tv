@@ -1,0 +1,23 @@
+=== LAIN.TV BACKEND TEST RESULTS ===
+Date: $(date)
+
+CONTAINER STATUS:
+$(docker compose ps --format "table {{.Name}}\t{{.Status}}")
+
+SERVICE TESTS:
+
+1. Nginx Health:
+$(curl -s http://localhost:8080/health)
+
+2. Animation Service:
+$(curl -s http://localhost:8080/api/animation/health)
+
+3. Animation VRM Data (neutral idle):
+$(curl -s -X POST http://localhost:8080/api/animation/get_animation -H "Content-Type: application/json" -d '{"mood": "neutral", "state": "idle"}')
+
+4. Animation VRM Data (cryptic speaking - glitch effects):
+$(curl -s -X POST http://localhost:8080/api/animation/get_animation -H "Content-Type: application/json" -d '{"mood": "cryptic", "state": "speaking"}')
+
+5. Available Moods:
+$(curl -s http://localhost:8080/api/animation/moods)
+
