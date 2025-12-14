@@ -6,9 +6,6 @@
       "type": "rust"
     },
     "lain-tv-frontend": {
-      "dependencies": [
-        "lain-tv-backend"
-      ],
       "source": [
         "src/lain-tv-frontend/dist"
       ],

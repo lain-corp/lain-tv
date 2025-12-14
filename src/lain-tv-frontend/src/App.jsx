@@ -1,6 +1,26 @@
 import { useState, useEffect } from 'react';
 import { lain_tv_backend } from 'declarations/lain-tv-backend';
 
+// Odysee Official Categories
+const CATEGORIES = ['discover', 'artists', 'tech', 'gaming', 'music', 'sports', 'news', 'movies', 'education', 'comedy', 'lifestyle'];
+
+// Category Selector Component
+function CategorySelector({ selectedCategory, onCategorySelect }) {
+  return (
+    <div className="category-selector">
+      {CATEGORIES.map((category) => (
+        <button
+          key={category}
+          className={`category-btn ${selectedCategory === category ? 'active' : ''}`}
+          onClick={() => onCategorySelect(category)}
+        >
+          {category.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // TV Corner Component
 function TVCorner({ className }) {
   return (
@@ -88,9 +108,19 @@ function VideoList({ videos, currentVideoIndex, onVideoSelect }) {
 // Main Screen Component
 function MainScreen({ currentVideo, isLoading }) {
   const getOdyseeEmbedUrl = (odyseeUrl) => {
-    if (odyseeUrl && odyseeUrl.includes('odysee.com/')) {
-      return odyseeUrl.replace('odysee.com/', 'odysee.com/$/embed/');
+    if (!odyseeUrl || !odyseeUrl.includes('odysee.com/')) {
+      return odyseeUrl;
     }
+    
+    // Handle different Odysee URL formats
+    // From: https://odysee.com/@channel:id/video:id
+    // To: https://odysee.com/$/embed/@channel:id/video:id
+    const urlParts = odyseeUrl.split('odysee.com/');
+    if (urlParts.length === 2) {
+      const path = urlParts[1];
+      return `https://odysee.com/$/embed/${path}`;
+    }
+    
     return odyseeUrl;
   };
 
@@ -139,57 +169,36 @@ function Notification({ message, show }) {
 // Main App Component
 function App() {
   const [videos, setVideos] = useState([]);
+  const [allVideos, setAllVideos] = useState([]);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [currentChannel, setCurrentChannel] = useState(1);
+  const [selectedCategory, setSelectedCategory] = useState('general');
   const [isLoading, setIsLoading] = useState(true);
   const [notification, setNotification] = useState({ message: '', show: false });
 
   // Mock data for development
   const mockVideos = [
     {
+      id: '0',
+      title: 'AI Art Works - Chill Lofi Stream',
+      description: 'Relaxing AI-generated art and music 24/7',
+      channel: 'aiartworks360',
+      category: 'artists',
+      featured: true,
+      odysee_url: 'https://odysee.com/@aiartworks360:2/chill:bf',
+      thumbnail_url: null,
+      published_at: Date.now(),
+    },
+    {
       id: '1',
-      title: 'Decentralized Future on ICP',
+      title: 'Get ready for Lain I/O',
       description: 'Exploring blockchain technology and the Internet Computer',
-      channel: 'TechLain',
-      odysee_url: 'https://odysee.com/@lainlives:c/decentralized-tech:e',
+      channel: 'laincorp',
+      category: 'tech',
+      featured: true,
+      odysee_url: 'https://odysee.com/Lain-I-O:0ebb072b602d44c0268f47c90414169ce7417420',
       thumbnail_url: null,
       published_at: Date.now() - 86400000,
-    },
-    {
-      id: '2',
-      title: 'Cyberpunk Aesthetics & Digital Art',
-      description: 'Visual culture in the digital age',
-      channel: 'VisualLain',
-      odysee_url: 'https://odysee.com/@lainlives:c/cyberpunk-culture:3',
-      thumbnail_url: null,
-      published_at: Date.now() - 172800000,
-    },
-    {
-      id: '3',
-      title: 'Web3 Development Tutorial',
-      description: 'Building decentralized apps on Internet Computer',
-      channel: 'DevLain',
-      odysee_url: 'https://odysee.com/@lainlives:c/icp-development:7',
-      thumbnail_url: null,
-      published_at: Date.now() - 259200000,
-    },
-    {
-      id: '4',
-      title: 'Digital Philosophy & Consciousness',
-      description: 'Consciousness in cyberspace and virtual reality',
-      channel: 'PhiloLain',
-      odysee_url: 'https://odysee.com/@lainlives:c/digital-philosophy:1',
-      thumbnail_url: null,
-      published_at: Date.now() - 345600000,
-    },
-    {
-      id: '5',
-      title: 'Network Protocols Explained',
-      description: 'Understanding the wired and network infrastructure',
-      channel: 'TechLain',
-      odysee_url: 'https://odysee.com/@lainlives:c/network-protocols:9',
-      thumbnail_url: null,
-      published_at: Date.now() - 432000000,
     }
   ];
 
@@ -197,22 +206,54 @@ function App() {
     loadVideos();
   }, []);
 
+  // Filter videos when category changes
+  useEffect(() => {
+    if (allVideos.length > 0) {
+      filterVideosByCategory(selectedCategory);
+    }
+  }, [selectedCategory, allVideos]);
+
   const loadVideos = async () => {
     setIsLoading(true);
     try {
-      // Try to fetch from backend canister
-      const backendVideos = await lain_tv_backend.list_videos();
+      // Fetch only featured videos for the channel guide
+      const backendVideos = await lain_tv_backend.get_featured_videos();
       if (backendVideos && backendVideos.length > 0) {
-        setVideos(backendVideos);
+        // Convert BigInt to Number for timestamps if needed
+        const processedVideos = backendVideos.map(v => ({
+          ...v,
+          published_at: Number(v.published_at),
+          fetched_at: Number(v.fetched_at),
+        }));
+        setAllVideos(processedVideos);
+        filterVideosByCategory(selectedCategory, processedVideos);
       } else {
-        // Use mock data if no backend data
+        // Fall back to mock data
+        setAllVideos(mockVideos);
         setVideos(mockVideos);
       }
     } catch (error) {
-      console.error('Error loading videos from backend, using mock data:', error);
+      console.error('Error loading videos, using mock data:', error);
+      setAllVideos(mockVideos);
       setVideos(mockVideos);
     }
     setIsLoading(false);
+  };
+
+  const filterVideosByCategory = (category, videoList = allVideos) => {
+    if (category === 'discover') {
+      setVideos(videoList);
+    } else {
+      const filtered = videoList.filter(v => v.category === category);
+      setVideos(filtered.length > 0 ? filtered : videoList);
+    }
+    setCurrentVideoIndex(0);
+    setCurrentChannel(1);
+  };
+
+  const handleCategorySelect = (category) => {
+    setSelectedCategory(category);
+    showNotification(`📺 ${category.toUpperCase()}`);
   };
 
   const showNotification = (message) => {
@@ -253,22 +294,61 @@ function App() {
     setCurrentChannel(prevIndex + 1);
   };
 
-  const handleSearch = (query) => {
+  const handleSearch = async (query) => {
     if (!query) return;
     
-    const filtered = videos.filter(video => 
-      video.title.toLowerCase().includes(query.toLowerCase()) || 
-      video.channel.toLowerCase().includes(query.toLowerCase()) ||
-      video.description.toLowerCase().includes(query.toLowerCase())
-    );
+    showNotification(`🔍 Searching...`);
     
-    if (filtered.length > 0) {
-      const index = videos.indexOf(filtered[0]);
-      setCurrentVideoIndex(index);
-      setCurrentChannel(index + 1);
-      showNotification(`🔍 Found: ${filtered[0].title}`);
-    } else {
-      showNotification('❌ No results found');
+    try {
+      // Search across ALL videos (including non-featured) via backend
+      const searchResults = await lain_tv_backend.search_videos(query);
+      
+      if (searchResults && searchResults.length > 0) {
+        // Process and display search results
+        const processedResults = searchResults.map(v => ({
+          ...v,
+          published_at: Number(v.published_at),
+          fetched_at: Number(v.fetched_at),
+        }));
+        
+        setVideos(processedResults);
+        setCurrentVideoIndex(0);
+        setCurrentChannel(1);
+        showNotification(`🔍 Found ${processedResults.length} results`);
+      } else {
+        // Fall back to local search in featured videos
+        const filtered = allVideos.filter(video => 
+          video.title.toLowerCase().includes(query.toLowerCase()) || 
+          video.channel.toLowerCase().includes(query.toLowerCase()) ||
+          video.description.toLowerCase().includes(query.toLowerCase())
+        );
+        
+        if (filtered.length > 0) {
+          setVideos(filtered);
+          setCurrentVideoIndex(0);
+          setCurrentChannel(1);
+          showNotification(`🔍 Found ${filtered.length} results`);
+        } else {
+          showNotification('❌ No results found');
+        }
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      // Fall back to local search
+      const filtered = allVideos.filter(video => 
+        video.title.toLowerCase().includes(query.toLowerCase()) || 
+        video.channel.toLowerCase().includes(query.toLowerCase()) ||
+        video.description.toLowerCase().includes(query.toLowerCase())
+      );
+      
+      if (filtered.length > 0) {
+        setVideos(filtered);
+        setCurrentVideoIndex(0);
+        setCurrentChannel(1);
+        showNotification(`🔍 Found ${filtered.length} results`);
+      } else {
+        showNotification('❌ No results found');
+      }
     }
   };
 
@@ -293,6 +373,12 @@ function App() {
       <TVCorner className="tv-top-right" />
       <TVCorner className="tv-bottom-left" />
       <TVCorner className="tv-bottom-right" />
+
+      {/* Category selector */}
+      <CategorySelector 
+        selectedCategory={selectedCategory}
+        onCategorySelect={handleCategorySelect}
+      />
 
       {/* Main screen */}
       <MainScreen currentVideo={currentVideo} isLoading={isLoading} />

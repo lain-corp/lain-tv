@@ -8,6 +8,7 @@
     "start": "vite --port 3000",
     "prebuild": "dfx generate",
     "build": "tsc && vite build",
+    "postbuild": "cp .ic-assets.json5 dist/.ic-assets.json5",
     "format": "prettier --write \"src/**/*.{json,js,jsx,ts,tsx,css,scss}\""
   },
   "dependencies": {

@@ -1,0 +1,206 @@
+---
+version: "2.0"
+
+services:
+  redis:
+    image: redis:7-alpine
+    expose:
+      - port: 6379
+        as: 6379
+        to:
+          - service: lainllm
+          - service: websocket
+          - service: tts
+          - service: animation
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "512mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    expose:
+      - port: 6333
+        as: 6333
+        to:
+          - service: lainllm
+      - port: 6334
+        as: 6334
+        to:
+          - service: lainllm
+    env:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__MAX_REQUEST_SIZE_MB=32
+
+  lainllm:
+    # Build directly from GitHub repository
+    image: ghcr.io/lain-corp/lain-tv/lainllm:latest
+    build:
+      context: https://github.com/lain-corp/lain-tv.git
+      dockerfile: backend/ai-agent/Dockerfile
+    expose:
+      - port: 8001
+        as: 8001
+        to:
+          - service: websocket
+          - global: true
+    env:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - MODEL_PATH=/models/lain-model.gguf
+      - N_THREADS=16
+      - N_CTX=4096
+      - N_BATCH=512
+      - TEMPERATURE=0.8
+      - MAX_TOKENS=150
+
+  websocket:
+    image: node:18-alpine
+    expose:
+      - port: 8080
+        as: 80
+        to:
+          - global: true
+        accept:
+          - www.lain.tv
+          - lain.tv
+    depends_on:
+      - lainllm
+      - redis
+    env:
+      - LAINLLM_URL=http://lainllm:8001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+  tts:
+    image: python:3.11-slim
+    expose:
+      - port: 8002
+        as: 8002
+        to:
+          - service: websocket
+    env:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+  animation:
+    image: python:3.11-slim
+    expose:
+      - port: 8003
+        as: 8003
+        to:
+          - service: websocket
+    env:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+profiles:
+  compute:
+    lainllm:
+      resources:
+        cpu:
+          units: 16
+        memory:
+          size: 12Gi
+        storage:
+          size: 20Gi
+    
+    qdrant:
+      resources:
+        cpu:
+          units: 2
+        memory:
+          size: 4Gi
+        storage:
+          size: 10Gi
+    
+    redis:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 1Gi
+        storage:
+          size: 1Gi
+    
+    websocket:
+      resources:
+        cpu:
+          units: 2
+        memory:
+          size: 1Gi
+        storage:
+          size: 1Gi
+    
+    tts:
+      resources:
+        cpu:
+          units: 2
+        memory:
+          size: 2Gi
+        storage:
+          size: 2Gi
+    
+    animation:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 512Mi
+        storage:
+          size: 1Gi
+
+  placement:
+    akash:
+      pricing:
+        lainllm:
+          denom: uakt
+          amount: 10000
+        qdrant:
+          denom: uakt
+          amount: 10000
+        redis:
+          denom: uakt
+          amount: 10000
+        websocket:
+          denom: uakt
+          amount: 10000
+        tts:
+          denom: uakt
+          amount: 10000
+        animation:
+          denom: uakt
+          amount: 10000
+
+deployment:
+  lainllm:
+    akash:
+      profile: lainllm
+      count: 1
+  qdrant:
+    akash:
+      profile: qdrant
+      count: 1
+  redis:
+    akash:
+      profile: redis
+      count: 1
+  websocket:
+    akash:
+      profile: websocket
+      count: 1
+  tts:
+    akash:
+      profile: tts
+      count: 1
+  animation:
+    akash:
+      profile: animation
+      count: 1

@@ -32,6 +32,8 @@ pub struct Video {
     pub title: String,
     pub description: String,
     pub channel: String,
+    pub category: String,
+    pub featured: bool,
     pub odysee_url: Url,
     pub thumbnail_url: Option<Url>,
     pub published_at: Timestamp,
@@ -103,6 +105,30 @@ fn is_admin(caller: Principal) -> bool {
     caller == canister_self() || caller.to_text().contains("rdmx6-jaaaa")
 }
 
+// Category to Odysee tags mapping for fetching
+// Based on Odysee's official discover page categories
+pub fn get_category_tags(category: &str) -> Vec<&'static str> {
+    match category {
+        "discover" => vec![], // General trending - no tag filter
+        "artists" => vec!["art", "artists", "artwork", "digital art", "drawing", "painting"],
+        "tech" => vec!["technology", "tech", "programming", "software", "coding", "linux"],
+        "gaming" => vec!["gaming", "games", "video games", "gameplay", "lets play"],
+        "music" => vec!["music", "song", "songs", "musician", "cover", "original music"],
+        "sports" => vec!["sports", "fitness", "workout", "exercise"],
+        "news" => vec!["news", "politics", "current events", "journalism"],
+        "movies" => vec!["movies", "film", "cinema", "documentary"],
+        "education" => vec!["education", "educational", "tutorial", "how to", "learn"],
+        "comedy" => vec!["comedy", "funny", "humor", "memes", "meme", "satire"],
+        "lifestyle" => vec!["lifestyle", "vlog", "travel", "food", "cooking"],
+        _ => vec![], // Default: no tag filter
+    }
+}
+
+// List of all supported categories (matching Odysee's official categories)
+pub fn get_all_categories() -> Vec<&'static str> {
+    vec!["discover", "artists", "tech", "gaming", "music", "sports", "news", "movies", "education", "comedy", "lifestyle"]
+}
+
 // Video management functions
 #[query]
 fn list_videos() -> Vec<Video> {
@@ -132,6 +158,77 @@ fn get_videos_by_channel(channel: String) -> Vec<Video> {
     })
 }
 
+#[query]
+fn get_videos_by_category(category: String) -> Vec<Video> {
+    VIDEOS.with(|videos| {
+        videos
+            .borrow()
+            .iter()
+            .filter(|(_, video)| video.category.to_lowercase() == category.to_lowercase())
+            .map(|(_, video)| video)
+            .collect()
+    })
+}
+
+#[query]
+fn get_featured_videos() -> Vec<Video> {
+    VIDEOS.with(|videos| {
+        videos
+            .borrow()
+            .iter()
+            .filter(|(_, video)| video.featured)
+            .map(|(_, video)| video)
+            .collect()
+    })
+}
+
+#[query]
+fn get_featured_by_category(category: String) -> Vec<Video> {
+    VIDEOS.with(|videos| {
+        videos
+            .borrow()
+            .iter()
+            .filter(|(_, video)| video.featured && video.category.to_lowercase() == category.to_lowercase())
+            .map(|(_, video)| video)
+            .collect()
+    })
+}
+
+#[query]
+fn search_videos(query: String) -> Vec<Video> {
+    let query_lower = query.to_lowercase();
+    VIDEOS.with(|videos| {
+        videos
+            .borrow()
+            .iter()
+            .filter(|(_, video)| {
+                video.title.to_lowercase().contains(&query_lower) ||
+                video.description.to_lowercase().contains(&query_lower) ||
+                video.channel.to_lowercase().contains(&query_lower)
+            })
+            .map(|(_, video)| video)
+            .take(100) // Limit search results
+            .collect()
+    })
+}
+
+#[query]
+fn get_categories() -> Vec<String> {
+    get_all_categories().iter().map(|s| s.to_string()).collect()
+}
+
+#[update]
+fn clear_all_videos() -> Result_ {
+    // Reinitialize the videos map to clear all data
+    // This avoids deserialization issues during schema migrations
+    VIDEOS.with(|videos| {
+        *videos.borrow_mut() = StableBTreeMap::new(
+            MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(0))),
+        );
+        Result_::Ok
+    })
+}
+
 #[update]
 fn add_or_update_video(video: Video) -> Result_ {
     let _caller = msg_caller();
@@ -143,6 +240,22 @@ fn add_or_update_video(video: Video) -> Result_ {
     // For demo, allow anyone to add videos. In production, restrict to admin
     VIDEOS.with(|videos| {
         videos.borrow_mut().insert(updated_video.id.clone(), updated_video);
+        Result_::Ok
+    })
+}
+
+#[update]
+fn batch_add_videos(videos_list: Vec<Video>) -> Result_ {
+    let _caller = msg_caller();
+    let current_time = get_current_time();
+    
+    // For demo, allow anyone to add videos. In production, restrict to admin
+    VIDEOS.with(|videos| {
+        let mut videos_map = videos.borrow_mut();
+        for mut video in videos_list {
+            video.fetched_at = current_time;
+            videos_map.insert(video.id.clone(), video);
+        }
         Result_::Ok
     })
 }
@@ -277,6 +390,8 @@ fn create_mock_videos() -> Vec<Video> {
             title: "Decentralized Future on ICP".to_string(),
             description: "Exploring blockchain technology and the Internet Computer".to_string(),
             channel: "TechLain".to_string(),
+            category: "tech".to_string(),
+            featured: true,
             odysee_url: "https://odysee.com/@lainlives:c/decentralized-tech:e".to_string(),
             thumbnail_url: None,
             published_at: current_time - 86400000,
@@ -290,6 +405,8 @@ fn create_mock_videos() -> Vec<Video> {
             title: "Cyberpunk Aesthetics & Digital Art".to_string(),
             description: "Visual culture in the digital age".to_string(),
             channel: "VisualLain".to_string(),
+            category: "artists".to_string(),
+            featured: true,
             odysee_url: "https://odysee.com/@lainlives:c/cyberpunk-culture:3".to_string(),
             thumbnail_url: None,
             published_at: current_time - 172800000,
@@ -303,6 +420,8 @@ fn create_mock_videos() -> Vec<Video> {
             title: "Web3 Development Tutorial".to_string(),
             description: "Building decentralized apps on Internet Computer".to_string(),
             channel: "DevLain".to_string(),
+            category: "tech".to_string(),
+            featured: true,
             odysee_url: "https://odysee.com/@lainlives:c/icp-development:7".to_string(),
             thumbnail_url: None,
             published_at: current_time - 259200000,

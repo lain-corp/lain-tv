@@ -14,6 +14,8 @@ type Video = record {
   title: text;
   description: text;
   channel: text;
+  category: text;
+  featured: bool;
   odysee_url: Url;
   thumbnail_url: opt Url;
   published_at: Timestamp;
@@ -38,10 +40,17 @@ service : {
   "list_videos": () -> (vec Video) query;
   "get_video": (VideoId) -> (opt Video) query;
   "get_videos_by_channel": (text) -> (vec Video) query;
+  "get_videos_by_category": (text) -> (vec Video) query;
+  "get_featured_videos": () -> (vec Video) query;
+  "get_featured_by_category": (text) -> (vec Video) query;
+  "search_videos": (text) -> (vec Video) query;
+  "get_categories": () -> (vec text) query;
   
   // Video management
   "add_or_update_video": (Video) -> (Result);
+  "batch_add_videos": (vec Video) -> (Result);
   "remove_video": (VideoId) -> (Result);
+  "clear_all_videos": () -> (Result);
   
   // Polling and admin
   "manual_poll": () -> (Result);

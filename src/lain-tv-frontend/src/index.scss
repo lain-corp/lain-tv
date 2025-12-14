@@ -23,6 +23,51 @@ body {
   position: relative;
 }
 
+/* Category Selector */
+.category-selector {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 700px;
+  z-index: 10;
+  padding: 10px 15px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid #00ff00;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+}
+
+.category-btn {
+  padding: 6px 12px;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: bold;
+  color: #00ff00;
+  background: linear-gradient(135deg, #222, #333);
+  border: 2px solid #444;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-shadow: 0 0 5px #00ff00;
+}
+
+.category-btn:hover {
+  background: linear-gradient(135deg, #333, #444);
+  border-color: #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+}
+
+.category-btn.active {
+  background: linear-gradient(135deg, #004400, #006600);
+  border-color: #00ff00;
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.7), inset 0 0 10px rgba(0, 255, 0, 0.3);
+}
+
 /* TV Corner Elements - Browser Compatible */
 .tv-corner {
   position: fixed;
@@ -374,26 +419,127 @@ header, main, footer, #playerModal {
   }
 }
 
-@media (max-width: 480px) {
+/* Mobile devices in portrait mode - stack layout instead of rotation */
+@media (max-width: 900px) and (orientation: portrait) {
+  body {
+    overflow-y: auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  #root {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding: 10px;
+  }
+
+  /* Hide corner TVs on mobile */
+  .tv-corner {
+    display: none !important;
+  }
+
+  /* Main screen takes most of the screen - BIGGER */
   .main-screen {
-    width: 90vw;
-    height: calc(90vw * 9/16 + 40px);
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: 65vw !important; /* Increased from 56.25vw */
+    margin: 15px 0 !important;
+    order: 2;
+  }
+
+  /* Video list at top - SMALLER */
+  .video-list {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-height: 20vh !important; /* Reduced from 30vh */
+    margin-bottom: 10px !important;
+    order: 1;
+    font-size: 11px !important;
+    padding: 10px !important;
+  }
+
+  .video-list h3 {
+    font-size: 12px !important;
+    margin-bottom: 5px !important;
+  }
+
+  /* Control panel at bottom - SMALLER */
+  .control-panel {
+    position: relative !important;
+    bottom: auto !important;
+    right: auto !important;
+    width: 100% !important;
+    margin-top: 10px !important;
+    order: 3;
+    align-self: center;
+    transform: scale(0.8) !important; /* Smaller remote */
+    padding: 12px !important;
+  }
+}
+
+/* Smaller screens */
+@media (max-width: 480px) and (orientation: portrait) {
+  .main-screen {
+    height: 70vw !important; /* Even bigger TV on small screens */
+    margin: 10px 0 !important;
   }
   
   .video-list {
-    width: 180px;
-    left: 10px;
-    max-height: 40vh;
-    font-size: 10px;
+    max-height: 18vh !important; /* Smaller channel guide */
+    font-size: 10px !important;
+    padding: 8px !important;
+  }
+  
+  .video-list h3 {
+    font-size: 11px !important;
   }
   
   .control-panel {
-    bottom: 100px;
-    right: 10px;
-    padding: 10px;
-    transform: scale(0.9);
+    transform: scale(0.7) !important; /* Much smaller remote */
+    padding: 8px !important;
+  }
+}
+
+@media (max-width: 360px) and (orientation: portrait) {
+  .main-screen {
+    height: 75vw !important; /* Maximum TV size on tiny screens */
   }
   
+  .video-list {
+    max-height: 15vh !important; /* Minimal channel guide */
+    font-size: 9px !important;
+  }
+  
+  .control-panel {
+    transform: scale(0.6) !important; /* Tiny remote */
+  }
+}
+
+/* Keep normal layout for landscape */
+@media (max-width: 900px) and (orientation: landscape) {
+  .main-screen {
+    width: 60vw;
+    height: calc(60vw * 9/16 + 40px);
+  }
+
+  .video-list {
+    max-height: 80vh;
+    font-size: 11px;
+  }
+
+  .control-panel {
+    transform: scale(0.85);
+    transform-origin: bottom right;
+  }
+
   .tv-corner {
     width: 100px;
     height: 75px;

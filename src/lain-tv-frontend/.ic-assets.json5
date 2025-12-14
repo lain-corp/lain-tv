@@ -1,0 +1,11 @@
+[
+    {
+        "match": "**/*",
+        "headers": {
+            "Content-Security-Policy": "default-src 'self'; script-src 'self'; connect-src 'self' https://icp0.io https://*.icp0.io https://icp-api.io https://ic0.app https://*.ic0.app https://odysee.com https://*.odysee.com https://api.odysee.com; img-src 'self' data: https: blob:; style-src 'self' 'unsafe-inline'; style-src-elem 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors *; form-action 'self'; frame-src https://odysee.com https://*.odysee.com; media-src https: blob: data:;",
+            "Referrer-Policy": "same-origin",
+            "X-Content-Type-Options": "nosniff",
+            "X-XSS-Protection": "1; mode=block"
+        }
+    }
+]
