@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including Rust
 RUN apt-get update && apt-get install -y \
     build-essential \
     gcc \
@@ -11,7 +11,12 @@ RUN apt-get update && apt-get install -y \
     curl \
     ffmpeg \
     espeak-ng \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && . $HOME/.cargo/env \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Rust environment
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copy requirements
 COPY requirements.txt .
