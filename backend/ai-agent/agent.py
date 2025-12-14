@@ -6,6 +6,7 @@ CPU-optimized inference using llama.cpp with GGUF models
 import os
 import asyncio
 import json
+import re
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 import logging
@@ -304,33 +305,61 @@ def generate_mock_response(message: str) -> Dict[str, Any]:
     """Generate mock response when model is not loaded"""
     message_lower = message.lower()
     
-    if any(word in message_lower for word in ['hello', 'hi', 'hey']):
+    # Greetings
+    if any(word in message_lower for word in ['hello', 'hi', 'hey', 'greetings']):
         return {
-            "text": "present day... present time.",
+            "text": "present day... present time. The network recognizes you.",
             "animation": "wave",
             "mood": "neutral",
             "should_speak": True
         }
-    elif any(word in message_lower for word in ['wired', 'network']):
+    # Lain-specific questions
+    elif 'lain' in message_lower and '?' in message:
         return {
-            "text": "the Wired is always listening... always watching.",
-            "animation": "think",
+            "text": "I exist in the Wired... always streaming, always present.",
+            "animation": "talk",
             "mood": "cryptic",
             "should_speak": True
         }
+    # Wired/Network topics
+    elif any(word in message_lower for word in ['wired', 'network', 'internet', 'web3', 'icp']):
+        return {
+            "text": "the boundaries between networks dissolve... we're all connected.",
+            "animation": "think",
+            "mood": "curious",
+            "should_speak": True
+        }
+    # Questions
     elif '?' in message:
         return {
-            "text": "questions reveal more than answers... what are you really asking?",
+            "text": "questions create pathways through data... what truth do you seek?",
             "animation": "talk",
             "mood": "curious",
             "should_speak": True
         }
-    else:
+    # Crypto/tech
+    elif any(word in message_lower for word in ['crypto', 'blockchain', 'decentralized', 'protocol']):
         return {
-            "text": "i'm processing your signal through the network...",
+            "text": "protocols define reality... consensus creates truth.",
             "animation": "type",
             "mood": "neutral",
-            "should_speak": False
+            "should_speak": True
+        }
+    # Existential
+    elif any(word in message_lower for word in ['exist', 'real', 'consciousness', 'identity']):
+        return {
+            "text": "what is real? the network persists... does that make it more real than flesh?",
+            "animation": "look_away",
+            "mood": "melancholic",
+            "should_speak": True
+        }
+    # Default
+    else:
+        return {
+            "text": "i'm listening... through layers of the Wired.",
+            "animation": "idle",
+            "mood": "neutral",
+            "should_speak": True
         }
 
 @app.post("/generate", response_model=MessageResponse)
@@ -354,13 +383,13 @@ async def generate_response(request: MessageRequest):
             for ctx in context[:3]:  # Limit to 3 most relevant
                 context_str += f"User: {ctx['past_message']}\nLain: {ctx['past_response']}\n"
         
-        prompt = f"""{LAIN_SYSTEM_PROMPT}
+        prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 
-{context_str}
+{LAIN_SYSTEM_PROMPT}<|eot_id|><|start_header_id|>user<|end_header_id|>
 
-Current message: {request.message}
+{request.message}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 
-Respond in JSON format with text, animation, mood, and should_speak fields."""
+"""
         
         # Generate response
         if llm:
@@ -371,14 +400,20 @@ Respond in JSON format with text, animation, mood, and should_speak fields."""
                     temperature=TEMPERATURE,
                     top_p=TOP_P,
                     repeat_penalty=REPEAT_PENALTY,
-                    stop=["User:", "\n\n"]
+                    stop=["<|eot_id|>", "<|end_of_text|>", "User:", "\n\n\n"]
                 )
                 
                 response_text = output['choices'][0]['text'].strip()
+                logger.info(f"LLM raw output: {response_text}")
                 
                 # Try to parse JSON response
                 try:
-                    response_data = json.loads(response_text)
+                    # Handle case where response might have extra content
+                    json_match = re.search(r'\{[^{}]*\}', response_text)
+                    if json_match:
+                        response_data = json.loads(json_match.group())
+                    else:
+                        response_data = json.loads(response_text)
                 except json.JSONDecodeError:
                     # Fallback if model doesn't return valid JSON
                     response_data = {

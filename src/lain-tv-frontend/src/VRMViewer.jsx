@@ -79,7 +79,7 @@ const ScanlinesShader = {
   `
 };
 
-const VRMViewer = ({ animationData, className = '' }) => {
+const VRMViewer = ({ animationData, className = '', isSpeaking = false }) => {
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
   const rendererRef = useRef(null);
@@ -88,6 +88,8 @@ const VRMViewer = ({ animationData, className = '' }) => {
   const composerRef = useRef(null);
   const glitchPassRef = useRef(null);
   const scanlinesPassRef = useRef(null);
+  const lipSyncTimeRef = useRef(0);
+  const lipSyncAnimationRef = useRef(null);
   const bloomPassRef = useRef(null);
   const clockRef = useRef(new THREE.Clock());
   const [loading, setLoading] = useState(true);
@@ -98,7 +100,7 @@ const VRMViewer = ({ animationData, className = '' }) => {
 
     // Scene setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a2e); // Darker blue-purple background
+    scene.background = new THREE.Color(0x252545); // Slightly brighter blue-purple TV glow
     sceneRef.current = scene;
     
     console.log('VRMViewer: Scene initialized');
@@ -128,21 +130,33 @@ const VRMViewer = ({ animationData, className = '' }) => {
     
     console.log('VRMViewer: Renderer initialized');
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0x6688ff, 0.6);
+    // Lighting - Bright TV screen lighting for Lain
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    // Main front light - bright white like a TV screen
+    const frontLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    frontLight.position.set(0, 1, 3);
+    scene.add(frontLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
     directionalLight.position.set(1, 1, 1);
     scene.add(directionalLight);
 
-    const rimLight = new THREE.DirectionalLight(0xff00ff, 0.3);
+    // Rim light for cyberpunk edge glow
+    const rimLight = new THREE.DirectionalLight(0xff00ff, 0.5);
     rimLight.position.set(-1, 0.5, -1);
     scene.add(rimLight);
 
-    const fillLight = new THREE.DirectionalLight(0x00ffff, 0.2);
+    // Cyan fill light for contrast
+    const fillLight = new THREE.DirectionalLight(0x00ffff, 0.4);
     fillLight.position.set(1, -0.5, 1);
     scene.add(fillLight);
+
+    // Bottom fill to reduce harsh shadows
+    const bottomFill = new THREE.DirectionalLight(0xaaaaff, 0.5);
+    bottomFill.position.set(0, -1, 2);
+    scene.add(bottomFill);
 
     // Post-processing setup
     const composer = new EffectComposer(renderer);
@@ -193,6 +207,21 @@ const VRMViewer = ({ animationData, className = '' }) => {
         console.log('VRM object:', vrm);
         console.log('VRM scene:', vrm.scene);
         
+        // Log available blend shapes/expressions
+        if (vrm.expressionManager) {
+          console.log('Available VRM expressions:', Object.keys(vrm.expressionManager.expressionMap));
+          console.log('Expression manager:', vrm.expressionManager);
+        } else {
+          console.warn('No expressionManager found on VRM model!');
+        }
+        
+        // Log humanoid bones
+        if (vrm.humanoid) {
+          console.log('VRM has humanoid rig');
+        } else {
+          console.warn('No humanoid rig found on VRM model!');
+        }
+        
         // Disable frustum culling for proper rendering
         vrm.scene.traverse((obj) => {
           if (obj.isMesh) {
@@ -222,7 +251,7 @@ const VRMViewer = ({ animationData, className = '' }) => {
         scene.add(vrm.scene);
         vrmRef.current = vrm;
         
-        // Adjust camera to fit the model
+        // Position camera to see full body
         const maxDim = Math.max(size.x, size.y, size.z);
         const fov = camera.fov * (Math.PI / 180);
         let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
@@ -231,11 +260,30 @@ const VRMViewer = ({ animationData, className = '' }) => {
         camera.position.set(0, size.y * 0.5, cameraZ);
         camera.lookAt(0, size.y * 0.5, 0);
         
-        console.log('Camera adjusted to:', camera.position);
-        console.log('Looking at:', { x: 0, y: size.y * 0.5, z: 0 });
+        // Set initial standing pose with arms down
+        if (vrm.humanoid) {
+          const leftUpperArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+          const rightUpperArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+          const leftLowerArm = vrm.humanoid.getNormalizedBoneNode('leftLowerArm');
+          const rightLowerArm = vrm.humanoid.getNormalizedBoneNode('rightLowerArm');
+          
+          // Rotate upper arms down
+          if (leftUpperArm) {
+            leftUpperArm.rotation.z = -Math.PI / 2.2;
+          }
+          if (rightUpperArm) {
+            rightUpperArm.rotation.z = Math.PI / 2.2;
+          }
+          
+          // Slight bend in elbows for natural look
+          if (leftLowerArm) {
+            leftLowerArm.rotation.y = -0.1;
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.y = 0.1;
+          }
+        }
         
-        console.log('VRM added to scene successfully');
-        console.log('Scene children:', scene.children.length);
         setLoading(false);
       },
       (progress) => {
@@ -294,6 +342,68 @@ const VRMViewer = ({ animationData, className = '' }) => {
     };
   }, []);
 
+  // Lip sync animation when speaking
+  useEffect(() => {
+    if (isSpeaking) {
+      // Lip sync animation loop
+      const animateLipSync = () => {
+        const vrm = vrmRef.current;
+        if (!vrm || !vrm.expressionManager) {
+          lipSyncAnimationRef.current = requestAnimationFrame(animateLipSync);
+          return;
+        }
+        
+        lipSyncTimeRef.current += 0.15;
+        const time = lipSyncTimeRef.current;
+        
+        // Create varied mouth movements using sine waves
+        const wave1 = Math.sin(time * 10) * 0.5 + 0.5;
+        const wave3 = Math.sin(time * 4 + 2) * 0.5 + 0.5;
+        const wave4 = Math.sin(time * 7 + 0.5) * 0.5 + 0.5;
+        
+        // Apply mouth blend shapes
+        try {
+          const em = vrm.expressionManager;
+          em.setValue('aa', wave1);
+          em.setValue('oh', wave3 * 0.7);
+          if (em.expressionMap['ee']) {
+            em.setValue('ee', wave4 * 0.5);
+          }
+        } catch (e) {
+          // Silent fail
+        }
+        
+        lipSyncAnimationRef.current = requestAnimationFrame(animateLipSync);
+      };
+      
+      animateLipSync();
+    } else {
+      // Stop lip sync and reset mouth
+      if (lipSyncAnimationRef.current) {
+        cancelAnimationFrame(lipSyncAnimationRef.current);
+        lipSyncAnimationRef.current = null;
+      }
+      
+      // Reset mouth to closed
+      const vrm = vrmRef.current;
+      if (vrm && vrm.expressionManager) {
+        ['aa', 'ih', 'oh', 'ee', 'ou'].forEach(shape => {
+          if (vrm.expressionManager.expressionMap[shape]) {
+            vrm.expressionManager.setValue(shape, 0);
+          }
+        });
+      }
+      
+      lipSyncTimeRef.current = 0;
+    }
+    
+    return () => {
+      if (lipSyncAnimationRef.current) {
+        cancelAnimationFrame(lipSyncAnimationRef.current);
+      }
+    };
+  }, [isSpeaking]);
+
   // Apply animation data to VRM
   useEffect(() => {
     if (!vrmRef.current || !animationData?.vrm_data) return;
@@ -301,15 +411,42 @@ const VRMViewer = ({ animationData, className = '' }) => {
     const vrm = vrmRef.current;
     const { blend_shapes, bone_rotations, effects } = animationData.vrm_data;
 
+    console.log('Applying animation data:', animationData);
+
+    // Mouth blend shapes to skip when speaking (lip sync controls these)
+    const mouthShapes = ['aa', 'ih', 'oh', 'ee', 'ou'];
+
     // Apply blend shapes
     if (blend_shapes && vrm.expressionManager) {
+      console.log('Attempting to apply blend shapes:', blend_shapes);
+      let appliedCount = 0;
+      let failedShapes = [];
+      let skippedForLipSync = [];
+      
       Object.entries(blend_shapes).forEach(([name, value]) => {
+        // Skip mouth shapes when speaking - lip sync controls them
+        if (isSpeaking && mouthShapes.includes(name)) {
+          skippedForLipSync.push(name);
+          return;
+        }
+        
         // Map our blend shape names to VRM expressions
         const expressionName = mapBlendShapeToVRM(name);
         if (expressionName && vrm.expressionManager.expressionMap[expressionName]) {
           vrm.expressionManager.setValue(expressionName, value);
+          appliedCount++;
+          console.log(`✓ Applied ${expressionName} = ${value}`);
+        } else {
+          failedShapes.push(name);
         }
       });
+      
+      if (skippedForLipSync.length > 0) {
+        console.log(`Skipped for lip sync: ${skippedForLipSync.join(', ')}`);
+      }
+      console.log(`Applied ${appliedCount} blend shapes, failed: ${failedShapes.join(', ')}`);
+    } else {
+      console.warn('Cannot apply blend shapes - missing expressionManager or blend_shapes data');
     }
 
     // Apply bone rotations
@@ -334,7 +471,7 @@ const VRMViewer = ({ animationData, className = '' }) => {
         bloomPassRef.current.strength = effects.bloom || 0.3;
       }
     }
-  }, [animationData]);
+  }, [animationData, isSpeaking]);
 
   // Helper function to map our blend shape names to VRM standard names
   const mapBlendShapeToVRM = (name) => {
