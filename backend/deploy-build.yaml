@@ -2,6 +2,23 @@
 version: "2.0"
 
 services:
+  nginx:
+    image: ghcr.io/lain-corp/lain-tv/nginx:latest
+    build:
+      context: https://github.com/lain-corp/lain-tv.git
+      dockerfile: backend/nginx/Dockerfile
+    expose:
+      - port: 80
+        as: 80
+        to:
+          - global: true
+        accept:
+          - lain.tv
+          - www.lain.tv
+    depends_on:
+      - websocket
+      - lainllm
+
   redis:
     image: redis:7-alpine
     expose:
@@ -47,8 +64,8 @@ services:
       - port: 8001
         as: 8001
         to:
+          - service: nginx
           - service: websocket
-          - global: true
     env:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -68,12 +85,9 @@ services:
       dockerfile: backend/websocket/Dockerfile
     expose:
       - port: 8080
-        as: 80
+        as: 8080
         to:
-          - global: true
-        accept:
-          - www.lain.tv
-          - lain.tv
+          - service: nginx
     depends_on:
       - lainllm
       - redis
@@ -91,6 +105,7 @@ services:
       - port: 8002
         as: 8002
         to:
+          - service: nginx
           - service: websocket
     env:
       - REDIS_HOST=redis
@@ -105,6 +120,7 @@ services:
       - port: 8003
         as: 8003
         to:
+          - service: nginx
           - service: websocket
     env:
       - REDIS_HOST=redis
@@ -112,6 +128,15 @@ services:
 
 profiles:
   compute:
+    nginx:
+      resources:
+        cpu:
+          units: 1
+        memory:
+          size: 512Mi
+        storage:
+          size: 1Gi
+    
     lainllm:
       resources:
         cpu:
@@ -169,6 +194,9 @@ profiles:
   placement:
     akash:
       pricing:
+        nginx:
+          denom: uakt
+          amount: 10000
         lainllm:
           denom: uakt
           amount: 10000
@@ -189,6 +217,10 @@ profiles:
           amount: 10000
 
 deployment:
+  nginx:
+    akash:
+      profile: nginx
+      count: 1
   lainllm:
     akash:
       profile: lainllm
