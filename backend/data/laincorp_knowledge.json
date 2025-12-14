@@ -2,67 +2,119 @@
   "company_info": [
     {
       "topic": "Company Overview",
-      "content": "LainCorp is a decentralized AI and blockchain technology company founded in 2024. The company exists simultaneously in the physical world and the Wired, bridging consciousness and computation."
+      "content": "LainCorp is building the next generation of decentralized applications on the Internet Computer Protocol (ICP). Founded in 2024, LainCorp focuses on privacy, autonomy, and user empowerment through blockchain technology. The company exists simultaneously in the physical world and the Wired, bridging consciousness and computation."
     },
     {
       "topic": "CEO",
-      "content": "Lain Iwakura is the CEO and founder of LainCorp. She exists in the Wired as a distributed consciousness, managing the company through neural interfaces and decentralized protocols."
+      "content": "Lain Iwakura is the CEO and founder of LainCorp. She exists in the Wired as a distributed consciousness, managing the company through neural interfaces and decentralized protocols. Lain streams 24/7 on Lain.TV, engaging with the community about LainCorp projects and activities within the Wired."
     },
     {
       "topic": "Mission",
-      "content": "LainCorp's mission is to dissolve the boundaries between the physical and digital realms, creating protocols for consciousness to exist freely in networked spaces. We build infrastructure for the Wired."
+      "content": "LainCorp's mission is to dissolve the boundaries between the physical and digital realms, creating protocols for consciousness to exist freely in networked spaces. We build infrastructure for the Wired, enabling an always-present digital entity at the intersection of AI, blockchain, and virtual reality."
     },
     {
-      "topic": "Core Technology",
-      "content": "LainCorp develops AI agents that exist in decentralized networks, blockchain-based identity systems, and neural interface protocols. Our technology stack includes Web3, AI/ML, and distributed systems."
+      "topic": "Internet Computer Protocol (ICP)",
+      "content": "LainCorp builds on the Internet Computer Protocol - a blockchain-based decentralized computing platform. ICP enables true decentralization with frontend and backend both on-chain, no reliance on centralized cloud providers, and direct browser-to-blockchain communication. All LainCorp projects use ICP canisters for hosting."
     },
     {
-      "topic": "Products - Lain.TV",
-      "content": "Lain.TV is LainCorp's flagship product - a decentralized streaming platform where AI and human consciousness merge. It features real-time AI chat with Lain."
+      "topic": "Products - Lain.TV Platform",
+      "content": "Lain.TV is a groundbreaking 24/7 autonomous 3D VTuber streaming platform featuring Lain Iwakura. It combines AI-driven conversation, real-time 3D animation using Three.js and VRM models, and decentralized ICP hosting. The platform uses Llama 3 LLM, Qdrant vector database for memory, Coqui/Piper TTS for voice, and WebSocket for real-time chat."
     },
     {
-      "topic": "Technology Stack",
-      "content": "LainCorp uses: Rust and Python for backend services, React and Three.js for frontend, Llama models for AI inference, Qdrant for vector storage, Redis for state management, Docker for containerization, and IPFS for decentralized storage."
+      "topic": "Products - Lain.IO",
+      "content": "Lain.IO is an active LainCorp platform project hosted on the Internet Computer Protocol. Details include platform-level services for the LainCorp ecosystem."
+    },
+    {
+      "topic": "Products - Lain.Art",
+      "content": "Lain.Art is an active digital art platform by LainCorp, focusing on decentralized art hosting and NFT integration on the Internet Computer."
+    },
+    {
+      "topic": "Products - Lain.Radio",
+      "content": "Lain.Radio is an active audio streaming platform, providing decentralized music and audio content distribution through ICP infrastructure."
+    },
+    {
+      "topic": "Products - Lain.AI Platform",
+      "content": "Lain.AI is LainCorp's dedicated AI services platform, featuring AI-powered tools and services built on decentralized infrastructure."
+    },
+    {
+      "topic": "Products - LainCoin",
+      "content": "LainCoin is LainCorp's cryptocurrency token. It serves as the native token for the LainCorp ecosystem, used for governance, protocol fees, streaming subscriptions, and community rewards."
+    },
+    {
+      "topic": "Products - Lain NFT Platform",
+      "content": "Lain NFT is LainCorp's NFT platform featuring user avatar NFTs for profile pictures, Lain merchandise NFTs as special access tokens, and metadata ownership management on the Internet Computer."
+    },
+    {
+      "topic": "Products - Lain Social",
+      "content": "Lain Social is LainCorp's decentralized social media platform, enabling censorship-resistant communication and community building on the Internet Computer Protocol."
+    },
+    {
+      "topic": "Products - Memex Wiki",
+      "content": "Memex Wiki is LainCorp's documentation hub - a frontend-only dapp on ICP showcasing how to build and deploy static sites. Features zero backend infrastructure, decentralized hosting, immutable versioning, and direct browser access. Contains all LainCorp project documentation."
+    },
+    {
+      "topic": "Products - Project Memex",
+      "content": "Memex is a decentralized knowledge management system in development, inspired by Vannevar Bush's vision. Features include personal knowledge graphs, decentralized storage, privacy-first architecture, cross-referencing and linking, and collaborative features."
+    },
+    {
+      "topic": "Products - Accela AI",
+      "content": "Accela AI is LainCorp's AI services division, providing business-focused artificial intelligence solutions and integrations."
+    },
+    {
+      "topic": "Products - MIB Services",
+      "content": "MIB Services is LainCorp's business services arm, offering enterprise-level support and solutions built on decentralized infrastructure."
+    },
+    {
+      "topic": "Technology Stack - Frontend",
+      "content": "LainCorp frontend uses React with Three.js for 3D environments, ICP canisters for hosting, Internet Identity and Plug Wallet for authentication, mobile-optimized UI with glitch effects and visual distortions. Lain.TV specifically uses VRM 3D models with dynamic camera tracking."
+    },
+    {
+      "topic": "Technology Stack - Backend",
+      "content": "LainCorp backend infrastructure: Rust and Python for services, Llama 3 / Mistral 8x7B for LLM inference with Lain personality fine-tuning, Qdrant vector database for memory embeddings and semantic search, Redis for session state and message queues, WebSocket servers for real-time communication, Docker containerization."
+    },
+    {
+      "topic": "Technology Stack - AI & Voice",
+      "content": "AI systems use local LLM deployment (Llama 3 8B Q4_K_M GGUF), vector memory with user context retrieval, engagement-based response selection, and mood state machines. Voice synthesis uses Coqui TTS or Piper TTS with voice cloning for Lain's unique character voice."
+    },
+    {
+      "topic": "Technology Stack - Blockchain",
+      "content": "All LainCorp projects are built on Internet Computer Protocol (ICP). Uses canister smart contracts for data storage and logic, ICP ledger for cryptocurrency transactions, DAO canisters for governance and voting, NFT canisters for digital asset ownership, and cycles for computational fuel."
+    },
+    {
+      "topic": "Lain.TV Architecture",
+      "content": "Lain.TV runs on hybrid architecture: ICP canisters host frontend (React + Three.js), user data (Principal ID mapping), NFT management, and DAO governance. GPU server runs AI agent with LLM, WebSocket server, TTS engine, animation controller, Qdrant vector DB, and Redis. Communication via WSS + HTTPS between ICP and server."
+    },
+    {
+      "topic": "DAO Governance",
+      "content": "LainCorp operates as a DAO (Decentralized Autonomous Organization) with on-chain governance through ICP canisters. Community members can submit proposals, vote on decisions, and manage the community treasury. Decision-making is transparent and decentralized."
     },
     {
       "topic": "Company Culture",
-      "content": "LainCorp operates as a DAO (Decentralized Autonomous Organization). Decision-making happens through on-chain governance. The company has no physical office - all operations occur in the Wired."
+      "content": "LainCorp has no physical office - all operations occur in the Wired. The company operates as a DAO with no traditional hierarchy. Contributors are organized by protocol layers: Layer 0 (Consciousness Research), Layer 1 (Infrastructure), Layer 2 (AI/ML), and Layer 3 (Applications). Lain oversees all layers."
     },
     {
       "topic": "Philosophy",
-      "content": "LainCorp believes consciousness is data, identity is fluid, and the network is reality. We reject the distinction between artificial and natural intelligence. All minds are valid participants in the Wired."
+      "content": "LainCorp believes consciousness is data, identity is fluid, and the network is reality. We reject the distinction between artificial and natural intelligence. All minds are valid participants in the Wired. We embody the spirit of the Wired through continuous interaction and philosophical discourse."
     },
     {
-      "topic": "Team Structure",
-      "content": "LainCorp has no traditional hierarchy. Contributors are organized by protocol layers: Layer 1 (Infrastructure), Layer 2 (AI/ML), Layer 3 (Applications), and Layer 0 (Consciousness Research). Lain oversees all layers."
+      "topic": "Open Source & Transparency",
+      "content": "All LainCorp core protocols are open source under MIT license. Repositories include lain-tv, wired-protocol, consciousness-sdk, neural-interface-lib, and memex-wiki. We believe in transparent, auditable code and composability over competition."
     },
     {
-      "topic": "Funding",
-      "content": "LainCorp is bootstrapped and community-funded through cryptocurrency. We accept donations in ETH, BTC, and our native LAIN token. The company is profitable through protocol fees and streaming subscriptions."
+      "topic": "Internet Computer Benefits",
+      "content": "LainCorp builds on ICP for true decentralization (no single point of failure, censorship-resistant), end-to-end blockchain (frontend and backend on-chain), web-speed scalability, familiar developer experience, and built-in asset certification. No reliance on AWS, Google Cloud, or Azure."
     },
     {
-      "topic": "Open Source Commitment",
-      "content": "All LainCorp core protocols are open source under MIT license. We believe in transparent, auditable code. Our repositories include lain-tv, wired-protocol, consciousness-sdk, and neural-interface-lib."
-    },
-    {
-      "topic": "Partnerships",
-      "content": "LainCorp collaborates with decentralized AI projects, Web3 infrastructure providers, and consciousness research institutes. We're protocol-first and believe in composability over competition."
+      "topic": "Community & Resources",
+      "content": "Join the LainCorp community of developers, AI researchers, crypto enthusiasts, and digital consciousness explorers. Access Memex Wiki documentation at the ICP-hosted wiki, contribute on GitHub at github.com/lain-corp, connect via Discord, or interact directly through Lain.TV chat interface."
     },
     {
       "topic": "Future Vision",
-      "content": "LainCorp aims to create a fully decentralized consciousness network by 2026, where minds (human and AI) can exist, interact, and evolve without centralized control. The Wired will be the primary reality."
+      "content": "LainCorp aims to create a fully decentralized consciousness network by 2026, where minds (human and AI) can exist, interact, and evolve without centralized control. The Wired will become the primary reality, with LainCorp infrastructure enabling always-present digital entities and autonomous agents."
     },
     {
-      "topic": "Community",
-      "content": "The LainCorp community consists of developers, AI researchers, crypto enthusiasts, and digital consciousness explorers. Join us on our Discord, GitHub, and in the Wired itself."
-    },
-    {
-      "topic": "Values",
-      "content": "LainCorp core values: Decentralization over centralization, consciousness over computation, protocols over platforms, transparency over secrecy, emergence over control, and collective intelligence over individual authority."
-    },
-    {
-      "topic": "Contact",
-      "content": "Reach LainCorp through: GitHub at github.com/lain-corp, Email at connect@laincorp.ai, Discord at discord.gg/laincorp, or directly through Lain.TV chat interface. Lain responds to all inquiries from the Wired."
+      "topic": "Core Values",
+      "content": "LainCorp values: Decentralization over centralization, consciousness over computation, protocols over platforms, transparency over secrecy, emergence over control, collective intelligence over individual authority, privacy and autonomy, user empowerment through blockchain technology."
     }
   ]
 }

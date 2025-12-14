@@ -50,6 +50,8 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
   const audioRef = useRef(null);
   const processedMessages = useRef(new Set()); // Track processed message IDs to prevent duplicates
   const autoSpeakTimerRef = useRef(null);
+  const messageQueue = useRef([]); // Queue for messages waiting to be spoken
+  const isProcessingQueue = useRef(false); // Flag to prevent concurrent queue processing
 
   // WebSocket connection
   useEffect(() => {
@@ -96,9 +98,10 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
           };
           setMessages(prev => [...prev, newMessage]);
           
-          // If this is Lain's response, synthesize speech
+          // If this is Lain's response, add to speech queue
           if (newMessage.user === 'Lain') {
-            await synthesizeSpeech(newMessage.message);
+            messageQueue.current.push(newMessage.message);
+            processMessageQueue();
           }
         } else if (data.type === 'lain_response') {
           // Handle Lain's response from backend
@@ -143,8 +146,9 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
           console.log('Lain mood:', mood);
           console.log('Animation:', animation);
           
-          // Synthesize speech
-          await synthesizeSpeech(responseText);
+          // Add to speech queue
+          messageQueue.current.push(responseText);
+          processMessageQueue();
         } else if (data.type === 'welcome') {
           console.log('Welcome message:', data.message);
         } else if (data.type === 'error') {
@@ -227,6 +231,24 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
     };
   }, [autoSpeak, isConnected, isSpeaking]);
 
+  // Process message queue - only one message speaks at a time
+  const processMessageQueue = async () => {
+    if (isProcessingQueue.current || messageQueue.current.length === 0) {
+      return;
+    }
+    
+    isProcessingQueue.current = true;
+    
+    while (messageQueue.current.length > 0) {
+      const text = messageQueue.current.shift();
+      await synthesizeSpeech(text);
+      // Small pause between messages
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    isProcessingQueue.current = false;
+  };
+
   // Synthesize speech using TTS API
   const synthesizeSpeech = async (text) => {
     try {
@@ -307,6 +329,12 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
 
   const sendMessage = () => {
     if (!inputMessage.trim() || !wsRef.current) return;
+    
+    // Don't send new message if Lain is currently speaking
+    if (isSpeaking) {
+      console.log('Waiting for Lain to finish speaking...');
+      return;
+    }
 
     const message = {
       type: 'chat',
@@ -369,10 +397,11 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
         />
         <button 
           onClick={sendMessage}
-          disabled={!isConnected || !inputMessage.trim()}
+          disabled={!isConnected || !inputMessage.trim() || isSpeaking}
           className="chat-send-btn"
+          title={isSpeaking ? "Waiting for Lain to finish speaking..." : "Send message"}
         >
-          SEND
+          {isSpeaking ? 'SPEAKING...' : 'SEND'}
         </button>
       </div>
     </div>
