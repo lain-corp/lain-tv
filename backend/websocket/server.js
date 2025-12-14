@@ -11,10 +11,13 @@ app.use(express.json());
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Redis client
+// Redis client - v4 uses socket configuration
 const redisClient = redis.createClient({
-  host: process.env.REDIS_HOST || 'redis',
-  port: process.env.REDIS_PORT || 6379
+  socket: {
+    host: process.env.REDIS_HOST || 'redis',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+    family: 4  // Force IPv4
+  }
 });
 
 redisClient.on('error', (err) => console.error('Redis error:', err));
