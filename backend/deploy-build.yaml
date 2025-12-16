@@ -1,6 +1,10 @@
 ---
 version: "2.0"
 
+# Optimized Akash deployment for ~$50/month
+# Removed Qdrant (using ICP canister instead)
+# Reduced resource allocations to cost-effective levels
+
 services:
   nginx:
     image: ghcr.io/lain-corp/lain-tv/nginx:latest
@@ -34,28 +38,13 @@ services:
       - "--appendonly"
       - "yes"
       - "--maxmemory"
-      - "512mb"
+      - "256mb"
       - "--maxmemory-policy"
       - "allkeys-lru"
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    expose:
-      - port: 6333
-        as: 6333
-        to:
-          - service: lainllm
-      - port: 6334
-        as: 6334
-        to:
-          - service: lainllm
-    env:
-      - QDRANT__SERVICE__HTTP_PORT=6333
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__SERVICE__MAX_REQUEST_SIZE_MB=32
-
   lainllm:
     # Build directly from GitHub repository
+    # Uses ICP canister for knowledge (no Qdrant needed)
     image: ghcr.io/lain-corp/lain-tv/lainllm:latest
     build:
       context: https://github.com/lain-corp/lain-tv.git
@@ -69,10 +58,10 @@ services:
     env:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
+      - ICP_CANISTER_ID=zbpu3-baaaa-aaaad-qhpha-cai
+      - ICP_HOST=https://ic0.app
       - MODEL_PATH=/models/lain-model.gguf
-      - N_THREADS=16
+      - N_THREADS=4
       - N_CTX=4096
       - N_BATCH=512
       - TEMPERATURE=0.8
@@ -131,27 +120,18 @@ profiles:
     nginx:
       resources:
         cpu:
-          units: 1
+          units: 0.5
         memory:
-          size: 512Mi
+          size: 256Mi
         storage:
-          size: 1Gi
+          size: 512Mi
     
     lainllm:
       resources:
         cpu:
-          units: 16
+          units: 4
         memory:
-          size: 12Gi
-        storage:
-          size: 20Gi
-    
-    qdrant:
-      resources:
-        cpu:
-          units: 2
-        memory:
-          size: 4Gi
+          size: 6Gi
         storage:
           size: 10Gi
     
@@ -160,61 +140,58 @@ profiles:
         cpu:
           units: 0.5
         memory:
-          size: 1Gi
+          size: 512Mi
         storage:
-          size: 1Gi
+          size: 512Mi
     
     websocket:
       resources:
         cpu:
-          units: 2
+          units: 1
         memory:
-          size: 1Gi
+          size: 512Mi
         storage:
-          size: 1Gi
+          size: 512Mi
     
     tts:
       resources:
         cpu:
-          units: 2
+          units: 1
         memory:
-          size: 2Gi
+          size: 1Gi
         storage:
-          size: 2Gi
+          size: 1Gi
     
     animation:
       resources:
         cpu:
           units: 0.5
         memory:
-          size: 512Mi
+          size: 256Mi
         storage:
-          size: 1Gi
+          size: 512Mi
 
   placement:
     akash:
       pricing:
         nginx:
           denom: uakt
-          amount: 10000
+          amount: 1000
         lainllm:
           denom: uakt
-          amount: 10000
-        qdrant:
-          denom: uakt
-          amount: 10000
+          amount: 5000
         redis:
           denom: uakt
-          amount: 10000
+          amount: 1000
         websocket:
           denom: uakt
-          amount: 10000
+          amount: 1000
         tts:
           denom: uakt
-          amount: 10000
+          amount: 2000
         animation:
           denom: uakt
-          amount: 10000
+          amount: 1000
 
 deployment:
   nginx:
@@ -224,10 +201,6 @@ deployment:
   lainllm:
     akash:
       profile: lainllm
-      count: 1
-  qdrant:
-    akash:
-      profile: qdrant
       count: 1
   redis:
     akash:

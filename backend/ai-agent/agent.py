@@ -2,16 +2,17 @@
 LainLLM - AI Agent for Lain.TV
 CPU-optimized inference using llama.cpp with GGUF models
 Queries ICP canister (ai_api_backend) for personality embeddings and memex.wiki knowledge
+Uses ic-py SDK for proper candid RPC calls
 """
 
 import os
 import asyncio
 import json
 import re
+import struct
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 import logging
-import httpx
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,12 @@ from pydantic import BaseModel
 import redis.asyncio as redis
 from sentence_transformers import SentenceTransformer
 from llama_cpp import Llama
+
+# IC Python SDK imports
+from ic.client import Client
+from ic.identity import Identity
+from ic.agent import Agent
+from ic.candid import encode, decode, Types
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,7 +63,8 @@ ICP_HOST = os.getenv("ICP_HOST", "https://ic0.app")
 llm: Optional[Llama] = None
 redis_client: Optional[redis.Redis] = None
 encoder: Optional[SentenceTransformer] = None
-http_client: Optional[httpx.AsyncClient] = None
+ic_agent: Optional[Agent] = None
+ic_canister_id: str = ""
 
 # Pydantic models
 class MessageRequest(BaseModel):
@@ -141,91 +149,134 @@ REMEMBER:
 - Don't break character or acknowledge you're an AI
 - No emojis or overly cheerful responses"""
 
-# ICP Canister helper functions
-async def query_icp_canister(method: str, args: Any = None) -> Any:
-    """Query the ICP canister using the IC HTTP interface"""
-    global http_client
+# ICP Canister helper functions using ic-py SDK
+def call_canister_query(method: str, params: List[Dict]) -> Any:
+    """Make a query call to the ICP canister using candid encoding
     
-    if not http_client:
+    params should be a list of {'type': Types.X, 'value': value} dicts
+    """
+    global ic_agent, ic_canister_id
+    
+    if not ic_agent:
+        logger.warning("IC Agent not initialized")
         return None
     
     try:
-        # Use the IC's query endpoint
-        url = f"{ICP_HOST}/api/v2/canister/{ICP_CANISTER_ID}/query"
+        # Encode arguments using candid (ic-py format)
+        encoded_args = encode(params)
         
-        # For query calls, we need to use the candid interface
-        # Since direct candid calls are complex, we'll use a simpler HTTP approach
-        # The canister should expose HTTP query endpoints
+        # Make query call
+        result = ic_agent.query_raw(
+            ic_canister_id,
+            method,
+            encoded_args
+        )
         
-        # Alternative: Use the canister's HTTP interface if available
-        http_url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/{method}"
-        
-        if args:
-            response = await http_client.post(http_url, json=args, timeout=30.0)
-        else:
-            response = await http_client.get(http_url, timeout=30.0)
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logger.warning(f"ICP query {method} returned status {response.status_code}")
-            return None
+        return result
     except Exception as e:
-        logger.error(f"ICP canister query error ({method}): {e}")
+        logger.error(f"IC canister query error ({method}): {e}")
+        return None
+
+def call_canister_update(method: str, params: List[Dict]) -> Any:
+    """Make an update call to the ICP canister using candid encoding"""
+    global ic_agent, ic_canister_id
+    
+    if not ic_agent:
+        logger.warning("IC Agent not initialized")
+        return None
+    
+    try:
+        # Encode arguments using candid
+        encoded_args = encode(params)
+        
+        # Make update call
+        result = ic_agent.update_raw(
+            ic_canister_id,
+            method,
+            encoded_args
+        )
+        
+        return result
+    except Exception as e:
+        logger.error(f"IC canister update error ({method}): {e}")
         return None
 
 async def search_icp_knowledge(query_embedding: List[float], categories: Optional[List[str]] = None, limit: int = 10) -> List[Dict]:
-    """Search the ICP canister for relevant knowledge using embeddings"""
-    global http_client
+    """Search the ICP canister for relevant knowledge using embeddings
     
-    if not http_client or not encoder:
+    Uses the search_personality candid method which searches personality embeddings
+    """
+    global ic_agent, encoder
+    
+    if not ic_agent or not encoder:
         return []
     
     try:
-        # Call the canister's search_unified_knowledge endpoint
-        # Format embedding for candid (vec float32)
-        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/search"
+        # The canister method: search_personality(channel_id: text, embedding: vec float32) -> vec text
+        channel_id = "#wiki"  # Default channel - changed from #lain-tv which doesn't exist
         
-        payload = {
-            "query_embedding": query_embedding,
-            "categories": categories,
-            "limit": limit
-        }
+        # Convert embedding to the format expected by candid (vec float32)
+        embedding_vec = [float(x) for x in query_embedding]
         
-        response = await http_client.post(url, json=payload, timeout=30.0)
+        # ic-py format: list of {type, value} dicts
+        params = [
+            {'type': Types.Text, 'value': channel_id},
+            {'type': Types.Vec(Types.Float32), 'value': embedding_vec}
+        ]
         
-        if response.status_code == 200:
-            results = response.json()
-            return results if isinstance(results, list) else []
-        else:
-            logger.warning(f"ICP knowledge search returned status {response.status_code}")
-            return []
+        # Encode and call
+        encoded_args = encode(params)
+        
+        # Make query call - ic-py returns already decoded result
+        result = ic_agent.query_raw(
+            ic_canister_id,
+            "search_personality",
+            encoded_args
+        )
+        
+        if result and isinstance(result, list) and len(result) > 0:
+            # ic-py returns already decoded: [{'type': 'rec_0', 'value': [...strings...]}]
+            texts = result[0].get('value', [])
+            if isinstance(texts, list):
+                logger.info(f"ICP search_personality returned {len(texts)} results")
+                return [{"topic": "[Personality]", "content": text, "relevance": 0.9} for text in texts if isinstance(text, str)]
+        
+        return []
     except Exception as e:
         logger.error(f"ICP knowledge search error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return []
 
 async def search_personality_icp(channel_id: str, query_embedding: List[float]) -> List[str]:
     """Search for personality context from ICP canister"""
-    global http_client
+    global ic_agent
     
-    if not http_client:
+    if not ic_agent:
         return []
     
     try:
-        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/personality"
+        embedding_vec = [float(x) for x in query_embedding]
         
-        payload = {
-            "channel_id": channel_id,
-            "query_embedding": query_embedding
-        }
+        params = [
+            {'type': Types.Text, 'value': channel_id},
+            {'type': Types.Vec(Types.Float32), 'value': embedding_vec}
+        ]
         
-        response = await http_client.post(url, json=payload, timeout=30.0)
+        encoded_args = encode(params)
         
-        if response.status_code == 200:
-            results = response.json()
-            return results if isinstance(results, list) else []
-        else:
-            return []
+        # ic-py returns already decoded result
+        result = ic_agent.query_raw(
+            ic_canister_id,
+            "search_personality",
+            encoded_args
+        )
+        
+        if result and isinstance(result, list) and len(result) > 0:
+            # ic-py returns already decoded: [{'type': 'rec_0', 'value': [...strings...]}]
+            texts = result[0].get('value', [])
+            return texts if isinstance(texts, list) else []
+        return []
     except Exception as e:
         logger.error(f"ICP personality search error: {e}")
         return []
@@ -233,26 +284,46 @@ async def search_personality_icp(channel_id: str, query_embedding: List[float]) 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    global llm, redis_client, encoder, http_client
+    global llm, redis_client, encoder, ic_agent, ic_canister_id
     
-    logger.info("Starting LainLLM service v2.0 (ICP Canister Mode)...")
+    logger.info("Starting LainLLM service v2.1 (ICP Canister Mode with ic-py)...")
     
-    # Initialize HTTP client for ICP canister queries
+    # Initialize IC Agent for canister queries
     try:
-        http_client = httpx.AsyncClient(
-            timeout=30.0,
-            headers={"Content-Type": "application/json"}
-        )
-        # Test connection to IC
-        test_url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/health"
-        response = await http_client.get(test_url, timeout=10.0)
-        if response.status_code == 200:
-            logger.info(f"✓ ICP Canister connected: {ICP_CANISTER_ID}")
-        else:
-            logger.warning(f"⚠ ICP Canister returned status {response.status_code}")
+        ic_canister_id = ICP_CANISTER_ID
+        
+        # Create anonymous identity for query calls
+        identity = Identity()
+        
+        # Create IC client pointing to mainnet
+        client = Client(url=ICP_HOST)
+        
+        # Create agent
+        ic_agent = Agent(identity, client)
+        
+        # Test connection by getting personality embeddings count
+        try:
+            # ic-py uses empty list for no args
+            encoded_args = encode([])
+            result = ic_agent.query_raw(
+                ic_canister_id,
+                "get_personality_embeddings",
+                encoded_args
+            )
+            if result and isinstance(result, list) and len(result) > 0:
+                # ic-py returns already decoded: [{'type': ..., 'value': [...]}]
+                count = len(result[0].get('value', []))
+                logger.info(f"✓ ICP Canister connected: {ic_canister_id}")
+                logger.info(f"  Personality embeddings available: {count}")
+            else:
+                logger.warning(f"⚠ ICP Canister query returned empty result")
+        except Exception as e:
+            logger.warning(f"⚠ ICP Canister test query failed: {e}")
+            logger.info("  Will retry on first knowledge query...")
+            
     except Exception as e:
-        logger.warning(f"⚠ ICP Canister connection test failed: {e}")
-        logger.info("  Will retry on first query...")
+        logger.error(f"✗ IC Agent initialization failed: {e}")
+        ic_agent = None
     
     # Initialize Redis
     try:
@@ -262,7 +333,7 @@ async def startup_event():
     except Exception as e:
         logger.error(f"✗ Redis connection failed: {e}")
     
-    # Initialize sentence encoder (still needed to generate query embeddings)
+    # Initialize sentence encoder (needed to generate query embeddings)
     try:
         encoder = SentenceTransformer('all-MiniLM-L6-v2')
         logger.info("✓ Sentence encoder loaded (for query embedding generation)")
@@ -293,8 +364,6 @@ async def shutdown_event():
     """Cleanup on shutdown"""
     if redis_client:
         await redis_client.close()
-    if http_client:
-        await http_client.aclose()
     logger.info("LainLLM service stopped")
 
 @app.get("/health", response_model=HealthResponse)
@@ -304,7 +373,7 @@ async def health_check():
         status="healthy" if llm else "degraded",
         model_loaded=llm is not None,
         redis_connected=redis_client is not None,
-        icp_canister_connected=http_client is not None
+        icp_canister_connected=ic_agent is not None
     )
 
 def calculate_engagement_score(message: str, user_history: Optional[Dict] = None) -> int:
@@ -346,35 +415,49 @@ def calculate_engagement_score(message: str, user_history: Optional[Dict] = None
     return max(0, score)
 
 async def recall_context(principal_id: str, message: str, limit: int = 5) -> List[Dict]:
-    """Retrieve relevant past interactions from ICP canister"""
-    if not http_client or not encoder:
+    """Retrieve relevant past interactions from ICP canister
+    
+    Uses: search_user_conversation_history(user_id, channel_id, embedding, limit) -> vec text
+    """
+    global ic_agent, encoder
+    
+    if not ic_agent or not encoder:
         return []
     
     try:
         query_embedding = encoder.encode(message).tolist()
+        embedding_vec = [float(x) for x in query_embedding]
         
-        # Query ICP canister for user conversation history
-        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/user_conversations"
+        # ic-py format for (text, text, vec float32, opt nat32)
+        params = [
+            {'type': Types.Text, 'value': principal_id},
+            {'type': Types.Text, 'value': "#general"},  # Changed from #lain-tv which doesn't exist
+            {'type': Types.Vec(Types.Float32), 'value': embedding_vec},
+            {'type': Types.Opt(Types.Nat32), 'value': limit}
+        ]
         
-        payload = {
-            "user_id": principal_id,
-            "channel_id": "#lain-tv",
-            "query_embedding": query_embedding,
-            "limit": limit
-        }
+        encoded_args = encode(params)
         
-        response = await http_client.post(url, json=payload, timeout=30.0)
+        # ic-py returns already decoded result
+        result = ic_agent.query_raw(
+            ic_canister_id,
+            "search_user_conversation_history",
+            encoded_args
+        )
         
         context = []
-        if response.status_code == 200:
-            results = response.json()
-            if isinstance(results, list):
-                for item in results:
-                    context.append({
-                        "past_message": item.get('conversation_text', '')[:200],
-                        "past_response": item.get('summary', ''),
-                        "relevance": 0.8  # ICP doesn't return scores, assume high relevance
-                    })
+        if result and isinstance(result, list) and len(result) > 0:
+            # ic-py returns already decoded: [{'type': ..., 'value': [...]}]
+            texts = result[0].get('value', [])
+            if isinstance(texts, list):
+                for item in texts:
+                    if isinstance(item, str):
+                        context.append({
+                            "past_message": item[:200],
+                            "past_response": "",
+                            "relevance": 0.8
+                        })
+                logger.info(f"Retrieved {len(context)} conversation entries from ICP for user {principal_id[:8]}...")
         
         return context
     except Exception as e:
@@ -384,86 +467,177 @@ async def recall_context(principal_id: str, message: str, limit: int = 5) -> Lis
 async def recall_knowledge(message: str, limit: int = 10) -> List[Dict]:
     """Retrieve relevant knowledge from ICP canister (ai_api_backend)
     
-    This queries the canister's unified knowledge base which includes:
+    This queries the canister's personality embeddings which includes:
     - Lain personality embeddings
     - memex.wiki content
     - LainCorp documentation
+    
+    Uses: search_personality(channel_id, embedding) -> vec text
+    Searches across multiple channels to get comprehensive knowledge.
     """
-    if not http_client or not encoder:
+    global ic_agent, encoder
+    
+    if not ic_agent or not encoder:
+        logger.warning("IC Agent or encoder not available for knowledge recall")
         return []
     
     try:
         query_embedding = encoder.encode(message).tolist()
-        
-        # Search unified knowledge on ICP canister
-        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/search"
-        
-        payload = {
-            "query_embedding": query_embedding,
-            "categories": None,  # Search all categories
-            "limit": limit
-        }
-        
-        response = await http_client.post(url, json=payload, timeout=30.0)
+        embedding_vec = [float(x) for x in query_embedding]
         
         knowledge = []
-        if response.status_code == 200:
-            results = response.json()
-            if isinstance(results, list):
-                for item in results:
-                    # Parse the result based on category
-                    category = item.get('category', '')
-                    source_info = item.get('source_info', '')
-                    text = item.get('text', '')
-                    
-                    # Determine if it's wiki content or personality
-                    if category.startswith('wiki_'):
-                        topic = f"[Wiki: {source_info}]"
-                    else:
-                        topic = f"[{category}]"
-                    
-                    knowledge.append({
-                        "topic": topic,
-                        "content": text,
-                        "relevance": item.get('similarity', 0.8)
-                    })
         
-        logger.info(f"Retrieved {len(knowledge)} knowledge entries from ICP canister for query: {message[:50]}")
+        # Search across multiple relevant channels
+        # The canister has: #wiki, #tech, #general, #art, #music, #gaming, etc.
+        channels_to_search = ["#wiki", "#tech", "#general"]
+        
+        for channel in channels_to_search:
+            try:
+                # Method: search_personality(channel_id: text, embedding: vec float32) -> vec text
+                params = [
+                    {'type': Types.Text, 'value': channel},
+                    {'type': Types.Vec(Types.Float32), 'value': embedding_vec}
+                ]
+                
+                encoded_args = encode(params)
+                
+                # ic-py returns already decoded result
+                result = ic_agent.query_raw(
+                    ic_canister_id,
+                    "search_personality",
+                    encoded_args
+                )
+                
+                if result and isinstance(result, list) and len(result) > 0:
+                    # Result is already decoded: [{'type': 'rec_0', 'value': [...strings...]}]
+                    texts = result[0].get('value', [])
+                    if isinstance(texts, list):
+                        for idx, text in enumerate(texts):
+                            if isinstance(text, str) and len(text) > 10:
+                                # Determine category based on channel and content
+                                text_lower = text.lower()
+                                if channel == "#wiki" or "wiki" in text_lower or "memex" in text_lower:
+                                    topic = "[Wiki Knowledge]"
+                                elif "laincorp" in text_lower or "lain.tv" in text_lower:
+                                    topic = "[LainCorp]"
+                                elif channel == "#tech":
+                                    topic = "[Tech Knowledge]"
+                                else:
+                                    topic = "[Personality]"
+                                
+                                knowledge.append({
+                                    "topic": topic,
+                                    "content": text,
+                                    "channel": channel,
+                                    "relevance": 0.9 - (idx * 0.05)  # Decreasing relevance
+                                })
+                        
+                        logger.info(f"  Channel {channel}: found {len(texts)} results")
+            except Exception as e:
+                logger.warning(f"  Channel {channel} search failed: {e}")
+                continue
+        
+        # Sort by relevance and limit
+        knowledge.sort(key=lambda x: x['relevance'], reverse=True)
+        knowledge = knowledge[:limit]
+        
+        logger.info(f"Retrieved {len(knowledge)} knowledge entries from ICP canister for query: {message[:50]}...")
+        
+        # Log sample of retrieved knowledge for debugging
+        if knowledge:
+            logger.info(f"  Sample knowledge: {knowledge[0]['content'][:100]}...")
+        
         return knowledge
     except Exception as e:
         logger.error(f"Error recalling knowledge from ICP: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return []
 
 async def remember_interaction(principal_id: str, message: str, response: str, mood: str):
-    """Store conversation in ICP canister memory"""
-    if not http_client or not encoder:
+    """Store conversation in ICP canister memory
+    
+    Uses: store_conversation_chunk(conversation_embedding) -> text
+    """
+    global ic_agent, encoder
+    
+    if not ic_agent or not encoder:
         return
     
     try:
-        embedding = encoder.encode(f"{message} {response}").tolist()
+        # Generate embedding for the conversation
+        conversation_text = f"User: {message}\nLain: {response}"
+        embedding = encoder.encode(conversation_text).tolist()
+        embedding_vec = [float(x) for x in embedding]
         
-        # Store conversation chunk in ICP canister
-        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/store_conversation"
+        # Get next chunk index
+        chunk_index = 0
+        try:
+            params = [
+                {'type': Types.Text, 'value': principal_id},
+                {'type': Types.Text, 'value': "#general"}  # Changed from #lain-tv
+            ]
+            encoded_args = encode(params)
+            # ic-py returns already decoded result
+            result = ic_agent.query_raw(
+                ic_canister_id,
+                "get_next_conversation_chunk_index",
+                encoded_args
+            )
+            if result and isinstance(result, list) and len(result) > 0:
+                # ic-py returns already decoded: [{'type': ..., 'value': N}]
+                chunk_index = result[0].get('value', 0) if isinstance(result[0], dict) else 0
+        except Exception as e:
+            logger.debug(f"Could not get chunk index: {e}")
+            chunk_index = 0
         
-        payload = {
+        # Create conversation embedding record
+        # conversation_embedding = record {
+        #   user_id: text, channel_id: text, conversation_text: text,
+        #   embedding: vec float32, message_count: nat32, chunk_index: nat32,
+        #   created_at: nat64, summary: text
+        # }
+        record_type = Types.Record({
+            "user_id": Types.Text,
+            "channel_id": Types.Text,
+            "conversation_text": Types.Text,
+            "embedding": Types.Vec(Types.Float32),
+            "message_count": Types.Nat32,
+            "chunk_index": Types.Nat32,
+            "created_at": Types.Nat64,
+            "summary": Types.Text
+        })
+        
+        conversation_record = {
             "user_id": principal_id,
-            "channel_id": "#lain-tv",
-            "conversation_text": f"User: {message}\nLain: {response}",
-            "embedding": embedding,
-            "summary": response[:100],
+            "channel_id": "#general",  # Changed from #lain-tv
+            "conversation_text": conversation_text,
+            "embedding": embedding_vec,
             "message_count": 1,
-            "chunk_index": 0  # Will be auto-incremented by canister
+            "chunk_index": chunk_index,
+            "created_at": int(datetime.now().timestamp() * 1_000_000_000),  # nanoseconds
+            "summary": response[:100]
         }
         
-        response = await http_client.post(url, json=payload, timeout=30.0)
+        params = [{'type': record_type, 'value': conversation_record}]
+        encoded_args = encode(params)
         
-        if response.status_code == 200:
-            logger.debug(f"Stored interaction for {principal_id} in ICP canister")
+        # Make update call to store
+        result = ic_agent.update_raw(
+            ic_canister_id,
+            "store_conversation_chunk",
+            encoded_args
+        )
+        
+        if result:
+            logger.debug(f"Stored interaction for {principal_id[:8]}... in ICP canister")
         else:
-            logger.warning(f"Failed to store interaction: status {response.status_code}")
+            logger.warning(f"Failed to store interaction: no result returned")
             
     except Exception as e:
         logger.error(f"Error storing memory in ICP: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 def generate_mock_response(message: str) -> Dict[str, Any]:
     """Generate mock response when model is not loaded"""
@@ -627,23 +801,32 @@ async def generate_response(request: MessageRequest):
 @app.get("/stats")
 async def get_stats():
     """Get LLM statistics"""
-    knowledge_stats = {}
+    global ic_agent, ic_canister_id
+    
+    knowledge_stats = {"personality_count": 0}
     
     # Try to get knowledge stats from ICP canister
-    if http_client:
+    if ic_agent:
         try:
-            url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/stats"
-            response = await http_client.get(url, timeout=10.0)
-            if response.status_code == 200:
-                knowledge_stats = response.json()
+            encoded_args = encode([])
+            # ic-py returns already decoded result
+            result = ic_agent.query_raw(
+                ic_canister_id,
+                "get_personality_embeddings",
+                encoded_args
+            )
+            if result and isinstance(result, list) and len(result) > 0:
+                # ic-py returns already decoded: [{'type': ..., 'value': [...]}]
+                records = result[0].get('value', [])
+                knowledge_stats["personality_count"] = len(records)
         except Exception as e:
             logger.warning(f"Could not fetch ICP stats: {e}")
     
     return {
         "model_loaded": llm is not None,
         "model_path": MODEL_PATH if llm else None,
-        "icp_canister_id": ICP_CANISTER_ID,
-        "icp_connected": http_client is not None,
+        "icp_canister_id": ic_canister_id,
+        "icp_connected": ic_agent is not None,
         "knowledge_stats": knowledge_stats,
         "n_threads": N_THREADS,
         "n_ctx": N_CTX,
