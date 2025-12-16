@@ -137,22 +137,47 @@ function AIChatPanel({ onSpeakingStateChange }) {
             return;
           }
           
+          // Check if this is a response to a user message
+          const inResponseTo = data.in_response_to;
+          
           const newMessage = {
             user: 'Lain',
             message: responseText,
             timestamp: data.timestamp || new Date().toISOString(),
             mood: mood,
             animation: animation,
-            broadcast_id: messageId
+            broadcast_id: messageId,
+            inResponseTo: inResponseTo
           };
           setMessages(prev => [...prev, newMessage]);
           
-          console.log('🎬 BROADCAST Lain says:', responseText);
+          if (inResponseTo) {
+            console.log(`🎬 Lain responds to @${inResponseTo.username}:`, responseText);
+          } else {
+            console.log('🎬 BROADCAST Lain says:', responseText);
+          }
           console.log('Mood:', mood, 'Animation:', animation);
           
           // Add to speech queue
           messageQueue.current.push(responseText);
           processMessageQueue();
+        } else if (data.type === 'user_message') {
+          // Handle broadcasted user messages (visible to all viewers)
+          const messageId = data.broadcast_id || `user-${Date.now()}`;
+          if (processedMessages.current.has(messageId)) {
+            return;
+          }
+          processedMessages.current.add(messageId);
+          
+          const userMessage = {
+            user: data.username || 'Viewer',
+            message: data.message,
+            timestamp: data.timestamp || new Date().toISOString(),
+            broadcast_id: messageId,
+            isUserBroadcast: true // This is a user message broadcast to all
+          };
+          setMessages(prev => [...prev, userMessage]);
+          console.log(`💬 ${data.username} asked:`, data.message);
         } else if (data.type === 'lain_response') {
           // Legacy handler for backward compatibility
           let responseText = data.message;
@@ -346,18 +371,10 @@ function AIChatPanel({ onSpeakingStateChange }) {
       username: 'Viewer'
     };
 
-    console.log('Sending message (queued in broadcast mode):', message);
+    console.log('Sending message to Lain:', message);
     wsRef.current.send(JSON.stringify(message));
     
-    // Add user message to local state
-    // Note: In broadcast mode, this is local-only and won't affect other viewers
-    setMessages(prev => [...prev, {
-      user: 'You',
-      message: inputMessage,
-      timestamp: new Date().toISOString(),
-      local: true // Mark as local-only message
-    }]);
-    
+    // Clear input immediately - message will appear when broadcast back
     setInputMessage('');
   };
 
@@ -375,7 +392,7 @@ function AIChatPanel({ onSpeakingStateChange }) {
           {isConnected ? '🎬 LIVE BROADCAST' : '○ DISCONNECTED'}
         </span>
         <span className="broadcast-info" style={{ fontSize: '0.8em', marginLeft: '10px', opacity: 0.7 }}>
-          All viewers see the same stream
+          Interactive • Your messages are broadcast to all
         </span>
       </div>
       
@@ -384,8 +401,21 @@ function AIChatPanel({ onSpeakingStateChange }) {
           <div className="no-messages">Start a conversation with Lain...</div>
         ) : (
           messages.map((msg, index) => (
-            <div key={index} className={`message ${msg.user === 'You' ? 'message-user' : 'message-lain'}`}>
-              <div className="message-author">{msg.user}</div>
+            <div 
+              key={index} 
+              className={`message ${
+                msg.user === 'Lain' ? 'message-lain' : 
+                msg.isUserBroadcast ? 'message-user-broadcast' : 
+                'message-user'
+              }`}
+            >
+              <div className="message-author">
+                {msg.isUserBroadcast && <span className="broadcast-badge">📡</span>}
+                {msg.user}
+                {msg.inResponseTo && (
+                  <span className="in-response-to"> → replying to @{msg.inResponseTo.username}</span>
+                )}
+              </div>
               <div className="message-content">{msg.message}</div>
             </div>
           ))

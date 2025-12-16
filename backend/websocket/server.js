@@ -9,7 +9,15 @@ app.use(cors());
 app.use(express.json());
 
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+
+// WebSocket server - accepts connections on any path since nginx proxies /ws here
+const wss = new WebSocket.Server({ 
+  server,
+  verifyClient: (info, callback) => {
+    // Accept all connections
+    callback(true);
+  }
+});
 
 // Redis client - v4 uses socket configuration
 const redisClient = redis.createClient({
@@ -31,6 +39,10 @@ let currentMessage = null;
 let isBroadcasting = false;
 let lastBroadcastTime = 0;
 
+// User message queue for interactive responses
+const userMessageQueue = [];
+const MAX_QUEUE_SIZE = 10;
+
 // Broadcast to all connected clients
 function broadcast(data) {
   const message = JSON.stringify(data);
@@ -42,8 +54,85 @@ function broadcast(data) {
   console.log(`Broadcast to ${clients.size} clients:`, data.type);
 }
 
-// Generate AI response and broadcast to all clients
+// Process a user message and generate interactive response
+async function processUserMessage(userMessage) {
+  if (isBroadcasting) {
+    console.log('Already broadcasting, queueing user message...');
+    return false;
+  }
+
+  isBroadcasting = true;
+
+  try {
+    console.log(`🗣️ Processing user message from ${userMessage.username}: "${userMessage.message}"`);
+    
+    // First broadcast the user's message to all clients
+    broadcast({
+      type: 'user_message',
+      username: userMessage.username,
+      message: userMessage.message,
+      timestamp: userMessage.timestamp,
+      broadcast_id: Date.now()
+    });
+
+    // Call LainLLM service with the user's message
+    const lainllmUrl = process.env.LAINLLM_URL || 'http://lainllm:8001';
+    const response = await fetch(`${lainllmUrl}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: userMessage.message,
+        user_id: userMessage.user_id || 'anonymous',
+        username: userMessage.username || 'Anonymous',
+        include_memory: true
+      })
+    });
+
+    const lainResponse = await response.json();
+    
+    // Store current message as Lain's response
+    currentMessage = {
+      type: 'lain_broadcast',
+      message: lainResponse.response,
+      mood: lainResponse.mood,
+      animation: lainResponse.animation,
+      timestamp: new Date().toISOString(),
+      broadcast_id: Date.now(),
+      in_response_to: {
+        username: userMessage.username,
+        message: userMessage.message.substring(0, 100)
+      }
+    };
+
+    // Broadcast Lain's response to all connected clients
+    broadcast(currentMessage);
+    
+    lastBroadcastTime = Date.now();
+
+    // Store in Redis for history
+    await redisClient.lPush('broadcast_history', JSON.stringify(currentMessage));
+    await redisClient.lTrim('broadcast_history', 0, 99);
+
+    return true;
+
+  } catch (error) {
+    console.error('Error processing user message:', error);
+    return false;
+  } finally {
+    isBroadcasting = false;
+  }
+}
+
+// Generate AI response and broadcast to all clients (autonomous mode)
 async function generateAndBroadcast() {
+  // Check if there are queued user messages to process first
+  if (userMessageQueue.length > 0) {
+    const userMessage = userMessageQueue.shift();
+    console.log(`📬 Processing queued user message (${userMessageQueue.length} remaining)`);
+    await processUserMessage(userMessage);
+    return;
+  }
+
   if (isBroadcasting) {
     console.log('Already broadcasting, skipping...');
     return;
@@ -67,7 +156,7 @@ async function generateAndBroadcast() {
 
     const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
     
-    console.log('Generating broadcast message for prompt:', randomPrompt);
+    console.log('🎬 Generating autonomous broadcast for prompt:', randomPrompt);
     
     // Call LainLLM service
     const lainllmUrl = process.env.LAINLLM_URL || 'http://lainllm:8001';
@@ -149,18 +238,34 @@ wss.on('connection', (ws) => {
       const data = JSON.parse(message);
       console.log('Received message from client:', data.type);
 
-      // Handle user chat messages (optional - for interactive mode)
-      if (data.type === 'chat') {
-        // In broadcast mode, we can queue user messages for later AI processing
-        // or ignore them to keep it pure broadcast
-        console.log('User message received (queued):', data.message);
-        
-        // Optional: Store user messages in Redis for future processing
-        await redisClient.lPush('user_messages', JSON.stringify({
-          user: data.username || 'Anonymous',
-          message: data.message,
+      // Handle user chat messages - queue for interactive AI response
+      if (data.type === 'chat' && data.message && data.message.trim()) {
+        const userMessage = {
+          user_id: data.user_id || 'anonymous',
+          username: data.username || 'Anonymous',
+          message: data.message.trim(),
           timestamp: new Date().toISOString()
-        }));
+        };
+
+        console.log(`💬 User message received from ${userMessage.username}: "${userMessage.message}"`);
+        
+        // Store in Redis for history
+        await redisClient.lPush('user_messages', JSON.stringify(userMessage));
+        await redisClient.lTrim('user_messages', 0, 99);
+
+        // Add to processing queue if not full
+        if (userMessageQueue.length < MAX_QUEUE_SIZE) {
+          userMessageQueue.push(userMessage);
+          console.log(`📥 Message queued for processing (queue size: ${userMessageQueue.length})`);
+          
+          // If not currently broadcasting, process immediately
+          if (!isBroadcasting) {
+            console.log('⚡ Processing message immediately...');
+            await processUserMessage(userMessageQueue.shift());
+          }
+        } else {
+          console.log('⚠️ Message queue full, message will be processed in next cycle');
+        }
       }
     } catch (error) {
       console.error('Error processing message:', error);
@@ -181,6 +286,8 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     clients: clients.size,
     broadcast_mode: true,
+    interactive_mode: true,
+    message_queue_size: userMessageQueue.length,
     last_broadcast: lastBroadcastTime ? new Date(lastBroadcastTime).toISOString() : null
   });
 });

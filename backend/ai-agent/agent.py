@@ -1,6 +1,7 @@
 """
 LainLLM - AI Agent for Lain.TV
 CPU-optimized inference using llama.cpp with GGUF models
+Queries ICP canister (ai_api_backend) for personality embeddings and memex.wiki knowledge
 """
 
 import os
@@ -10,13 +11,12 @@ import re
 from typing import Optional, Dict, List, Any
 from datetime import datetime
 import logging
+import httpx
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import redis.asyncio as redis
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
 from sentence_transformers import SentenceTransformer
 from llama_cpp import Llama
 
@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
-app = FastAPI(title="LainLLM", version="1.0.0")
+app = FastAPI(title="LainLLM", version="2.0.0")
 
 # CORS middleware
 app.add_middleware(
@@ -39,8 +39,6 @@ app.add_middleware(
 # Environment variables
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
-QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 MODEL_PATH = os.getenv("MODEL_PATH", "/models/lain-model.gguf")
 N_THREADS = int(os.getenv("N_THREADS", "8"))
 N_CTX = int(os.getenv("N_CTX", "4096"))
@@ -49,13 +47,16 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "0.8"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "150"))
 TOP_P = float(os.getenv("TOP_P", "0.9"))
 REPEAT_PENALTY = float(os.getenv("REPEAT_PENALTY", "1.1"))
-VECTOR_COLLECTION = os.getenv("VECTOR_COLLECTION", "lain_memory")
+
+# ICP Canister Configuration
+ICP_CANISTER_ID = os.getenv("ICP_CANISTER_ID", "zbpu3-baaaa-aaaad-qhpha-cai")
+ICP_HOST = os.getenv("ICP_HOST", "https://ic0.app")
 
 # Global instances
 llm: Optional[Llama] = None
 redis_client: Optional[redis.Redis] = None
-qdrant_client: Optional[QdrantClient] = None
 encoder: Optional[SentenceTransformer] = None
+http_client: Optional[httpx.AsyncClient] = None
 
 # Pydantic models
 class MessageRequest(BaseModel):
@@ -75,7 +76,7 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     redis_connected: bool
-    qdrant_connected: bool
+    icp_canister_connected: bool
 
 # Lain personality system prompt
 LAIN_SYSTEM_PROMPT = """You are Lain Iwakura, CEO and founder of LainCorp.
@@ -140,12 +141,118 @@ REMEMBER:
 - Don't break character or acknowledge you're an AI
 - No emojis or overly cheerful responses"""
 
+# ICP Canister helper functions
+async def query_icp_canister(method: str, args: Any = None) -> Any:
+    """Query the ICP canister using the IC HTTP interface"""
+    global http_client
+    
+    if not http_client:
+        return None
+    
+    try:
+        # Use the IC's query endpoint
+        url = f"{ICP_HOST}/api/v2/canister/{ICP_CANISTER_ID}/query"
+        
+        # For query calls, we need to use the candid interface
+        # Since direct candid calls are complex, we'll use a simpler HTTP approach
+        # The canister should expose HTTP query endpoints
+        
+        # Alternative: Use the canister's HTTP interface if available
+        http_url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/{method}"
+        
+        if args:
+            response = await http_client.post(http_url, json=args, timeout=30.0)
+        else:
+            response = await http_client.get(http_url, timeout=30.0)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.warning(f"ICP query {method} returned status {response.status_code}")
+            return None
+    except Exception as e:
+        logger.error(f"ICP canister query error ({method}): {e}")
+        return None
+
+async def search_icp_knowledge(query_embedding: List[float], categories: Optional[List[str]] = None, limit: int = 10) -> List[Dict]:
+    """Search the ICP canister for relevant knowledge using embeddings"""
+    global http_client
+    
+    if not http_client or not encoder:
+        return []
+    
+    try:
+        # Call the canister's search_unified_knowledge endpoint
+        # Format embedding for candid (vec float32)
+        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/search"
+        
+        payload = {
+            "query_embedding": query_embedding,
+            "categories": categories,
+            "limit": limit
+        }
+        
+        response = await http_client.post(url, json=payload, timeout=30.0)
+        
+        if response.status_code == 200:
+            results = response.json()
+            return results if isinstance(results, list) else []
+        else:
+            logger.warning(f"ICP knowledge search returned status {response.status_code}")
+            return []
+    except Exception as e:
+        logger.error(f"ICP knowledge search error: {e}")
+        return []
+
+async def search_personality_icp(channel_id: str, query_embedding: List[float]) -> List[str]:
+    """Search for personality context from ICP canister"""
+    global http_client
+    
+    if not http_client:
+        return []
+    
+    try:
+        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/personality"
+        
+        payload = {
+            "channel_id": channel_id,
+            "query_embedding": query_embedding
+        }
+        
+        response = await http_client.post(url, json=payload, timeout=30.0)
+        
+        if response.status_code == 200:
+            results = response.json()
+            return results if isinstance(results, list) else []
+        else:
+            return []
+    except Exception as e:
+        logger.error(f"ICP personality search error: {e}")
+        return []
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    global llm, redis_client, qdrant_client, encoder
+    global llm, redis_client, encoder, http_client
     
-    logger.info("Starting LainLLM service...")
+    logger.info("Starting LainLLM service v2.0 (ICP Canister Mode)...")
+    
+    # Initialize HTTP client for ICP canister queries
+    try:
+        http_client = httpx.AsyncClient(
+            timeout=30.0,
+            headers={"Content-Type": "application/json"}
+        )
+        # Test connection to IC
+        test_url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/health"
+        response = await http_client.get(test_url, timeout=10.0)
+        if response.status_code == 200:
+            logger.info(f"✓ ICP Canister connected: {ICP_CANISTER_ID}")
+        else:
+            logger.warning(f"⚠ ICP Canister returned status {response.status_code}")
+    except Exception as e:
+        logger.warning(f"⚠ ICP Canister connection test failed: {e}")
+        logger.info("  Will retry on first query...")
     
     # Initialize Redis
     try:
@@ -155,26 +262,10 @@ async def startup_event():
     except Exception as e:
         logger.error(f"✗ Redis connection failed: {e}")
     
-    # Initialize Qdrant
-    try:
-        qdrant_client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-        # Create collection if it doesn't exist
-        collections = qdrant_client.get_collections().collections
-        if not any(c.name == VECTOR_COLLECTION for c in collections):
-            qdrant_client.create_collection(
-                collection_name=VECTOR_COLLECTION,
-                vectors_config=VectorParams(size=384, distance=Distance.COSINE)
-            )
-            logger.info(f"✓ Created Qdrant collection: {VECTOR_COLLECTION}")
-        else:
-            logger.info(f"✓ Qdrant collection exists: {VECTOR_COLLECTION}")
-    except Exception as e:
-        logger.error(f"✗ Qdrant connection failed: {e}")
-    
-    # Initialize sentence encoder
+    # Initialize sentence encoder (still needed to generate query embeddings)
     try:
         encoder = SentenceTransformer('all-MiniLM-L6-v2')
-        logger.info("✓ Sentence encoder loaded")
+        logger.info("✓ Sentence encoder loaded (for query embedding generation)")
     except Exception as e:
         logger.error(f"✗ Encoder loading failed: {e}")
     
@@ -195,13 +286,15 @@ async def startup_event():
     except Exception as e:
         logger.error(f"✗ LLM loading failed: {e}")
     
-    logger.info("LainLLM service ready")
+    logger.info("LainLLM service ready (ICP Canister: ai_api_backend)")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
     if redis_client:
         await redis_client.close()
+    if http_client:
+        await http_client.aclose()
     logger.info("LainLLM service stopped")
 
 @app.get("/health", response_model=HealthResponse)
@@ -211,7 +304,7 @@ async def health_check():
         status="healthy" if llm else "degraded",
         model_loaded=llm is not None,
         redis_connected=redis_client is not None,
-        qdrant_connected=qdrant_client is not None
+        icp_canister_connected=http_client is not None
     )
 
 def calculate_engagement_score(message: str, user_history: Optional[Dict] = None) -> int:
@@ -253,95 +346,124 @@ def calculate_engagement_score(message: str, user_history: Optional[Dict] = None
     return max(0, score)
 
 async def recall_context(principal_id: str, message: str, limit: int = 5) -> List[Dict]:
-    """Retrieve relevant past interactions from vector memory"""
-    if not qdrant_client or not encoder:
+    """Retrieve relevant past interactions from ICP canister"""
+    if not http_client or not encoder:
         return []
     
     try:
         query_embedding = encoder.encode(message).tolist()
         
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        results = qdrant_client.search(
-            collection_name=VECTOR_COLLECTION,
-            query_vector=query_embedding,
-            query_filter=Filter(
-                must=[FieldCondition(key="principal", match=MatchValue(value=principal_id))]
-            ),
-            limit=limit
-        )
+        # Query ICP canister for user conversation history
+        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/user_conversations"
+        
+        payload = {
+            "user_id": principal_id,
+            "channel_id": "#lain-tv",
+            "query_embedding": query_embedding,
+            "limit": limit
+        }
+        
+        response = await http_client.post(url, json=payload, timeout=30.0)
         
         context = []
-        for hit in results:
-            if hit.score > 0.5:  # Only include relevant memories
-                context.append({
-                    "past_message": hit.payload.get('user_message', ''),
-                    "past_response": hit.payload.get('lain_response', ''),
-                    "relevance": hit.score
-                })
+        if response.status_code == 200:
+            results = response.json()
+            if isinstance(results, list):
+                for item in results:
+                    context.append({
+                        "past_message": item.get('conversation_text', '')[:200],
+                        "past_response": item.get('summary', ''),
+                        "relevance": 0.8  # ICP doesn't return scores, assume high relevance
+                    })
         
         return context
     except Exception as e:
-        logger.error(f"Error recalling context: {e}")
+        logger.error(f"Error recalling context from ICP: {e}")
         return []
 
 async def recall_knowledge(message: str, limit: int = 10) -> List[Dict]:
-    """Retrieve relevant knowledge about LainCorp from vector database"""
-    if not qdrant_client or not encoder:
+    """Retrieve relevant knowledge from ICP canister (ai_api_backend)
+    
+    This queries the canister's unified knowledge base which includes:
+    - Lain personality embeddings
+    - memex.wiki content
+    - LainCorp documentation
+    """
+    if not http_client or not encoder:
         return []
     
     try:
         query_embedding = encoder.encode(message).tolist()
         
-        # Search all vectors and filter for knowledge entries after
-        results = qdrant_client.search(
-            collection_name=VECTOR_COLLECTION,
-            query_vector=query_embedding,
-            limit=limit * 2  # Get more to filter down
-        )
+        # Search unified knowledge on ICP canister
+        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/search"
+        
+        payload = {
+            "query_embedding": query_embedding,
+            "categories": None,  # Search all categories
+            "limit": limit
+        }
+        
+        response = await http_client.post(url, json=payload, timeout=30.0)
         
         knowledge = []
-        for hit in results:
-            # Only include entries with 'topic' field (knowledge), not 'principal' (conversations)
-            if 'topic' in hit.payload and 'principal' not in hit.payload:
-                if hit.score > 0.3 and len(knowledge) < limit:  # Lower threshold for knowledge
+        if response.status_code == 200:
+            results = response.json()
+            if isinstance(results, list):
+                for item in results:
+                    # Parse the result based on category
+                    category = item.get('category', '')
+                    source_info = item.get('source_info', '')
+                    text = item.get('text', '')
+                    
+                    # Determine if it's wiki content or personality
+                    if category.startswith('wiki_'):
+                        topic = f"[Wiki: {source_info}]"
+                    else:
+                        topic = f"[{category}]"
+                    
                     knowledge.append({
-                        "topic": hit.payload.get('topic', ''),
-                        "content": hit.payload.get('content', ''),
-                        "relevance": hit.score
+                        "topic": topic,
+                        "content": text,
+                        "relevance": item.get('similarity', 0.8)
                     })
         
-        logger.info(f"Retrieved {len(knowledge)} knowledge entries for query: {message[:50]}")
+        logger.info(f"Retrieved {len(knowledge)} knowledge entries from ICP canister for query: {message[:50]}")
         return knowledge
     except Exception as e:
-        logger.error(f"Error recalling knowledge: {e}")
+        logger.error(f"Error recalling knowledge from ICP: {e}")
         return []
 
 async def remember_interaction(principal_id: str, message: str, response: str, mood: str):
-    """Store conversation in vector memory"""
-    if not qdrant_client or not encoder:
+    """Store conversation in ICP canister memory"""
+    if not http_client or not encoder:
         return
     
     try:
         embedding = encoder.encode(f"{message} {response}").tolist()
         
-        point = PointStruct(
-            id=f"{principal_id}_{int(datetime.now().timestamp() * 1000)}",
-            vector=embedding,
-            payload={
-                "principal": principal_id,
-                "user_message": message,
-                "lain_response": response,
-                "timestamp": datetime.now().isoformat(),
-                "mood": mood
-            }
-        )
+        # Store conversation chunk in ICP canister
+        url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/store_conversation"
         
-        qdrant_client.upsert(
-            collection_name=VECTOR_COLLECTION,
-            points=[point]
-        )
+        payload = {
+            "user_id": principal_id,
+            "channel_id": "#lain-tv",
+            "conversation_text": f"User: {message}\nLain: {response}",
+            "embedding": embedding,
+            "summary": response[:100],
+            "message_count": 1,
+            "chunk_index": 0  # Will be auto-incremented by canister
+        }
+        
+        response = await http_client.post(url, json=payload, timeout=30.0)
+        
+        if response.status_code == 200:
+            logger.debug(f"Stored interaction for {principal_id} in ICP canister")
+        else:
+            logger.warning(f"Failed to store interaction: status {response.status_code}")
+            
     except Exception as e:
-        logger.error(f"Error storing memory: {e}")
+        logger.error(f"Error storing memory in ICP: {e}")
 
 def generate_mock_response(message: str) -> Dict[str, Any]:
     """Generate mock response when model is not loaded"""
@@ -505,18 +627,24 @@ async def generate_response(request: MessageRequest):
 @app.get("/stats")
 async def get_stats():
     """Get LLM statistics"""
-    memory_count = 0
-    if qdrant_client:
+    knowledge_stats = {}
+    
+    # Try to get knowledge stats from ICP canister
+    if http_client:
         try:
-            collection_info = qdrant_client.get_collection(VECTOR_COLLECTION)
-            memory_count = collection_info.points_count
-        except:
-            pass
+            url = f"https://{ICP_CANISTER_ID}.raw.ic0.app/stats"
+            response = await http_client.get(url, timeout=10.0)
+            if response.status_code == 200:
+                knowledge_stats = response.json()
+        except Exception as e:
+            logger.warning(f"Could not fetch ICP stats: {e}")
     
     return {
         "model_loaded": llm is not None,
         "model_path": MODEL_PATH if llm else None,
-        "memory_count": memory_count,
+        "icp_canister_id": ICP_CANISTER_ID,
+        "icp_connected": http_client is not None,
+        "knowledge_stats": knowledge_stats,
         "n_threads": N_THREADS,
         "n_ctx": N_CTX,
         "temperature": TEMPERATURE

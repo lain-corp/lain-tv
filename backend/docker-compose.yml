@@ -30,18 +30,9 @@ services:
     volumes:
       - redis-data:/data
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    ports:
-      - "6333:6333"
-    environment:
-      - QDRANT__SERVICE__HTTP_PORT=6333
-      - QDRANT__SERVICE__GRPC_PORT=6334
-      - QDRANT__SERVICE__MAX_REQUEST_SIZE_MB=32
-    networks:
-      - lain-network
-    volumes:
-      - qdrant-data:/qdrant/storage
+  # Qdrant removed - now using ICP canister (ai_api_backend) for embeddings
+  # The canister ID is: zbpu3-baaaa-aaaad-qhpha-cai
+  # It contains personality embeddings and memex.wiki knowledge
 
   lainllm:
     build:
@@ -50,8 +41,8 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - QDRANT_HOST=qdrant
-      - QDRANT_PORT=6333
+      - ICP_CANISTER_ID=zbpu3-baaaa-aaaad-qhpha-cai
+      - ICP_HOST=https://ic0.app
       - MODEL_PATH=/models/lain-model.gguf
       - N_THREADS=8
       - N_CTX=4096
@@ -60,7 +51,6 @@ services:
       - MAX_TOKENS=150
     depends_on:
       - redis
-      - qdrant
     networks:
       - lain-network
     volumes:
@@ -110,5 +100,4 @@ networks:
 
 volumes:
   redis-data:
-  qdrant-data:
   model-cache:
