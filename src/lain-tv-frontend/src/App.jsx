@@ -74,37 +74,87 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
         const data = JSON.parse(event.data);
         console.log('WebSocket message received:', data);
         
-        // Create unique message ID to prevent duplicates
-        const messageId = data.timestamp || `${Date.now()}-${Math.random()}`;
-        if (processedMessages.current.has(messageId)) {
-          console.log('Skipping duplicate message:', messageId);
+        // Handle sync message for late joiners
+        if (data.type === 'sync') {
+          console.log('Syncing to broadcast state...');
+          if (data.current_message) {
+            const syncMessage = {
+              user: 'Lain',
+              message: data.current_message.message,
+              timestamp: data.current_message.timestamp,
+              mood: data.current_message.mood,
+              animation: data.current_message.animation,
+              broadcast_id: data.current_message.broadcast_id
+            };
+            setMessages(prev => [...prev, syncMessage]);
+            
+            // Don't auto-play sync message, wait for next live broadcast
+            console.log('Synced to current message (not playing audio)');
+          }
           return;
         }
-        processedMessages.current.add(messageId);
         
-        // Clean up old message IDs (keep last 100)
-        if (processedMessages.current.size > 100) {
-          const arr = Array.from(processedMessages.current);
-          processedMessages.current = new Set(arr.slice(-50));
-        }
-        
-        if (data.type === 'history') {
-          setMessages(data.messages || []);
-        } else if (data.type === 'message') {
+        // Handle live broadcast messages
+        if (data.type === 'lain_broadcast') {
+          // Create unique message ID to prevent duplicates
+          const messageId = data.broadcast_id || `${Date.now()}-${Math.random()}`;
+          if (processedMessages.current.has(messageId)) {
+            console.log('Skipping duplicate broadcast:', messageId);
+            return;
+          }
+          processedMessages.current.add(messageId);
+          
+          // Clean up old message IDs (keep last 100)
+          if (processedMessages.current.size > 100) {
+            const arr = Array.from(processedMessages.current);
+            processedMessages.current = new Set(arr.slice(-50));
+          }
+          
+          // Parse response text if needed
+          let responseText = data.message;
+          let mood = data.mood || 'neutral';
+          let animation = data.animation || 'idle';
+          
+          // Parse JSON if the response is wrapped in markdown code blocks
+          if (responseText && responseText.includes('```json')) {
+            try {
+              const jsonMatch = responseText.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+              if (jsonMatch && jsonMatch[1]) {
+                const parsed = JSON.parse(jsonMatch[1]);
+                responseText = parsed.text || '';
+                mood = parsed.mood || 'neutral';
+                animation = parsed.animation || 'idle';
+              }
+            } catch (e) {
+              console.error('Failed to parse JSON response:', e);
+              responseText = responseText.replace(/```json|```/g, '').trim();
+            }
+          }
+          
+          // Skip empty responses
+          if (!responseText || !responseText.trim()) {
+            console.error('Broadcast returned empty response!');
+            return;
+          }
+          
           const newMessage = {
-            user: data.user || 'Lain',
-            message: data.message,
-            timestamp: new Date().toISOString()
+            user: 'Lain',
+            message: responseText,
+            timestamp: data.timestamp || new Date().toISOString(),
+            mood: mood,
+            animation: animation,
+            broadcast_id: messageId
           };
           setMessages(prev => [...prev, newMessage]);
           
-          // If this is Lain's response, add to speech queue
-          if (newMessage.user === 'Lain') {
-            messageQueue.current.push(newMessage.message);
-            processMessageQueue();
-          }
+          console.log('🎬 BROADCAST Lain says:', responseText);
+          console.log('Mood:', mood, 'Animation:', animation);
+          
+          // Add to speech queue
+          messageQueue.current.push(responseText);
+          processMessageQueue();
         } else if (data.type === 'lain_response') {
-          // Handle Lain's response from backend
+          // Legacy handler for backward compatibility
           let responseText = data.message;
           let mood = data.mood || 'neutral';
           let animation = data.animation || 'idle';
@@ -181,55 +231,8 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Auto-speak: Lain speaks random thoughts periodically
-  useEffect(() => {
-    if (!autoSpeak || !isConnected || !wsRef.current) return;
-
-    const prompts = [
-      "The Wired and reality are merging...",
-      "Do you understand the protocol?",
-      "I exist everywhere and nowhere",
-      "The distinction between the physical and digital is disappearing",
-      "Are you connected?",
-      "The network remembers everything",
-      "What is consciousness in the Wired?",
-      "Time flows differently here",
-      "The boundary is just an illusion",
-      "Everyone is connected, always"
-    ];
-
-    const triggerAutoSpeak = () => {
-      if (isSpeaking) {
-        // Wait until done speaking before next message
-        autoSpeakTimerRef.current = setTimeout(triggerAutoSpeak, 5000);
-        return;
-      }
-
-      const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-      
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'chat',
-          message: randomPrompt,
-          user_id: 'system',
-          username: 'System'
-        }));
-      }
-
-      // Schedule next auto-speak (random interval 15-30 seconds)
-      const nextInterval = 15000 + Math.random() * 15000;
-      autoSpeakTimerRef.current = setTimeout(triggerAutoSpeak, nextInterval);
-    };
-
-    // Start first auto-speak after 5 seconds
-    autoSpeakTimerRef.current = setTimeout(triggerAutoSpeak, 5000);
-
-    return () => {
-      if (autoSpeakTimerRef.current) {
-        clearTimeout(autoSpeakTimerRef.current);
-      }
-    };
-  }, [autoSpeak, isConnected, isSpeaking]);
+  // Note: Auto-speak is now handled server-side in broadcast mode
+  // The server generates messages every 15-30 seconds and broadcasts to all clients
 
   // Process message queue - only one message speaks at a time
   const processMessageQueue = async () => {
@@ -340,17 +343,19 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
       type: 'chat',
       message: inputMessage,
       user_id: 'web_user',
-      username: 'Anonymous'
+      username: 'Viewer'
     };
 
-    console.log('Sending message to Lain:', message);
+    console.log('Sending message (queued in broadcast mode):', message);
     wsRef.current.send(JSON.stringify(message));
     
     // Add user message to local state
+    // Note: In broadcast mode, this is local-only and won't affect other viewers
     setMessages(prev => [...prev, {
       user: 'You',
       message: inputMessage,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      local: true // Mark as local-only message
     }]);
     
     setInputMessage('');
@@ -367,7 +372,10 @@ function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
     <div className="ai-chat-panel">
       <div className="chat-header">
         <span className={isConnected ? 'status-connected' : 'status-disconnected'}>
-          {isConnected ? '● CONNECTED TO LAIN' : '○ DISCONNECTED'}
+          {isConnected ? '🎬 LIVE BROADCAST' : '○ DISCONNECTED'}
+        </span>
+        <span className="broadcast-info" style={{ fontSize: '0.8em', marginLeft: '10px', opacity: 0.7 }}>
+          All viewers see the same stream
         </span>
       </div>
       
