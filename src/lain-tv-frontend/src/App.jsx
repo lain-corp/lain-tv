@@ -40,7 +40,7 @@ function TVCorner({ className }) {
 }
 
 // AI Chat Panel Component (replaces Control Panel)
-function AIChatPanel({ onSpeakingStateChange, autoSpeak = false }) {
+function AIChatPanel({ onSpeakingStateChange }) {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isConnected, setIsConnected] = useState(false);
@@ -527,7 +527,6 @@ function App() {
   const [currentMood, setCurrentMood] = useState('neutral');
   const [currentState, setCurrentState] = useState('idle');
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [autoSpeak, setAutoSpeak] = useState(true); // Auto-speak enabled by default
   const [notification, setNotification] = useState({ message: '', show: false });
 
   const handleSpeakingStateChange = (speaking) => {
@@ -599,49 +598,8 @@ function App() {
       {/* Main screen - Now shows VRM Lain */}
       <MainScreen animationData={animationData} isLoading={isLoading} isSpeaking={isSpeaking} />
 
-      {/* AI Chat Panel - replaces video list */}
-      <div className="video-list">
-        <div style={{ 
-          color: '#00ff00', 
-          fontWeight: 'bold', 
-          marginBottom: '15px', 
-          textAlign: 'center',
-          fontSize: '1.2em',
-          textShadow: '0 0 10px #00ff00'
-        }}>
-          💬 TALK TO LAIN
-        </div>
-        <div style={{ 
-          fontSize: '0.8em', 
-          color: '#00ff00', 
-          marginBottom: '10px', 
-          textAlign: 'center',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '10px'
-        }}>
-          <span>Auto-speak:</span>
-          <button 
-            onClick={() => setAutoSpeak(!autoSpeak)}
-            style={{
-              background: autoSpeak ? '#00ff00' : 'rgba(0,255,0,0.2)',
-              color: autoSpeak ? '#000' : '#00ff00',
-              border: '2px solid #00ff00',
-              padding: '4px 12px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              fontSize: '0.9em'
-            }}
-          >
-            {autoSpeak ? 'ON' : 'OFF'}
-          </button>
-        </div>
-      </div>
-
-      {/* AI Chat Control Panel - replaces old control panel */}
-      <AIChatPanel onSpeakingStateChange={handleSpeakingStateChange} autoSpeak={autoSpeak} />
+      {/* AI Chat Control Panel */}
+      <AIChatPanel onSpeakingStateChange={handleSpeakingStateChange} />
 
       {/* Notification */}
       <Notification message={notification.message} show={notification.show} />
